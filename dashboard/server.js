@@ -222,8 +222,8 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
                 .sort((a, b) => a.date - b.date)
                 .map(s => ({
                     eventName: s.eventName,
-                    dateString: s.date.toDateString(),
-                    timeString: s.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    dateString: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+                    timeString: s.date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
                     isoDate: s.date,
                     attendees: s.attendees,
                     zoomLink: (s.location && s.location.join_url) ? s.location.join_url : null
