@@ -252,7 +252,7 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
             collectives: collectiveStats,
             globalStats: {
                 totalParticipants,
-                nextSession: nextSession ? `${nextSession.eventName} (${nextSession.dateString})` : 'None',
+                nextSession: nextSession || null,
                 totalSessions: allSessions.length
             }
         });
