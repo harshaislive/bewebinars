@@ -138,6 +138,53 @@ app.get('/oauth/callback', async (req, res) => {
 
 // --- DATA API ---
 
+async function refreshAccessToken() {
+    try {
+        console.log('Refreshing Access Token...');
+        const response = await axios.post('https://auth.calendly.com/oauth/token', null, {
+            params: {
+                grant_type: 'refresh_token',
+                client_id: process.env.CALENDLY_CLIENT_ID,
+                client_secret: process.env.CALENDLY_CLIENT_SECRET,
+                refresh_token: calendlyTokens.refreshToken
+            }
+        });
+
+        calendlyTokens.accessToken = response.data.access_token;
+        calendlyTokens.refreshToken = response.data.refresh_token; // Calendly rotates refresh tokens too
+        saveTokens();
+        console.log('Token Refreshed Successfully.');
+        return calendlyTokens.accessToken;
+    } catch (error) {
+        console.error('Failed to refresh token:', error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+// Helper to make authenticated requests with auto-retry
+async function makeCalendlyRequest(url, params = {}) {
+    if (!calendlyTokens.accessToken) throw new Error('No token');
+
+    try {
+        return await axios.get(url, {
+            headers: { Authorization: `Bearer ${calendlyTokens.accessToken}` },
+            params: params
+        });
+    } catch (error) {
+        // If 401, try to refresh and retry ONCE
+        if (error.response && error.response.status === 401) {
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+                return await axios.get(url, {
+                    headers: { Authorization: `Bearer ${newToken}` },
+                    params: params
+                });
+            }
+        }
+        throw error; // Re-throw if not 401 or refresh failed
+    }
+}
+
 app.get('/api/webinars', requireLogin, async (req, res) => {
     if (!calendlyTokens.accessToken) {
         return res.status(400).json({ error: 'Calendly not connected' });
@@ -145,20 +192,15 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
 
     try {
         // Step A: Get Current User URI
-        const userRes = await axios.get('https://api.calendly.com/users/me', {
-            headers: { Authorization: `Bearer ${calendlyTokens.accessToken}` }
-        });
+        const userRes = await makeCalendlyRequest('https://api.calendly.com/users/me');
         const userUri = userRes.data.resource.uri;
 
         // Step B: Get Scheduled Events (Active)
-        const eventsRes = await axios.get('https://api.calendly.com/scheduled_events', {
-            headers: { Authorization: `Bearer ${calendlyTokens.accessToken}` },
-            params: {
-                user: userUri,
-                status: 'active',
-                count: 100,
-                sort: 'start_time:asc'
-            }
+        const eventsRes = await makeCalendlyRequest('https://api.calendly.com/scheduled_events', {
+            user: userUri,
+            status: 'active',
+            count: 100,
+            sort: 'start_time:asc'
         });
 
         const events = eventsRes.data.collection;
@@ -167,9 +209,8 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
         const detailedEvents = await Promise.all(events.map(async (event) => {
             try {
                 const uuid = event.uri.split('/').pop();
-                const inviteesRes = await axios.get(`https://api.calendly.com/scheduled_events/${uuid}/invitees`, {
-                    headers: { Authorization: `Bearer ${calendlyTokens.accessToken}` }
-                });
+                // We also use the helper here to ensure sub-requests also refresh if needed
+                const inviteesRes = await makeCalendlyRequest(`https://api.calendly.com/scheduled_events/${uuid}/invitees`);
 
                 const invitees = inviteesRes.data.collection.map(inv => ({
                     name: inv.name,
@@ -261,6 +302,10 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
 
     } catch (error) {
         console.error('Error fetching data:', error.response ? error.response.data : error.message);
+        // If it was a 401 that failed even after retry
+        if (error.response && error.response.status === 401) {
+             return res.status(401).json({ error: 'Authentication expired' });
+        }
         res.status(500).json({ error: 'Failed to fetch data' });
     }
 });
