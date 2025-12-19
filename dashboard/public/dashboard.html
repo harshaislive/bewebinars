@@ -474,9 +474,8 @@
                     sessionsHtml = '<div style="padding:30px; color:#9ca3af; text-align:center; font-style:italic">No upcoming sessions scheduled.</div>';
                 } else {
                     sessionsHtml = item.sessions.map((s, idx) => {
-                        const dateObj = new Date(s.isoDate);
-                        const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
-                        const day = dateObj.getDate();
+                        const month = s.monthPart;
+                        const day = s.dayPart;
                         const hasAttendees = s.attendees.length > 0;
 
                         const attendeesList = s.attendees.map(a => `

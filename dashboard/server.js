@@ -224,6 +224,8 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
                     eventName: s.eventName,
                     dateString: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
                     timeString: s.date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+                    dayPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }),
+                    monthPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' }),
                     isoDate: s.date,
                     attendees: s.attendees,
                     zoomLink: (s.location && s.location.join_url) ? s.location.join_url : null
