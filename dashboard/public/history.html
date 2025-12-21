@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Be Webinars Dashboard</title>
-    <!-- Add FontAwesome for Icons -->
+    <title>Be Webinars History</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
@@ -61,68 +60,6 @@
             padding: 0 20px;
         }
 
-        /* Hero Section (Next Webinar) */
-        .hero-section {
-            margin-bottom: 40px;
-            display: none; /* Hidden by default */
-        }
-        .hero-card {
-            background: linear-gradient(135deg, #006BFF 0%, #004ecc 100%);
-            color: white;
-            border-radius: 16px;
-            padding: 32px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 10px 25px rgba(0, 107, 255, 0.2);
-        }
-        .hero-content h2 { margin: 0 0 8px 0; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9; }
-        .hero-title { font-size: 2rem; font-weight: 800; margin: 0 0 16px 0; }
-        .hero-meta { display: flex; gap: 24px; font-size: 1.1rem; opacity: 0.95; }
-        .hero-meta div { display: flex; align-items: center; gap: 8px; }
-        
-        .hero-actions {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            min-width: 200px;
-        }
-        .btn-hero {
-            background: white;
-            color: var(--primary);
-            border: none;
-            padding: 14px 24px;
-            border-radius: 8px;
-            font-weight: 700;
-            font-size: 1rem;
-            cursor: pointer;
-            text-decoration: none;
-            text-align: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .btn-hero:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
-        .btn-hero.secondary {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            font-weight: 600;
-            box-shadow: none;
-        }
-        .btn-hero.secondary:hover { background: rgba(255,255,255,0.3); }
-
-        /* Countdown */
-        .countdown-badge {
-            background: rgba(0,0,0,0.2);
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-        }
-
         /* Stats Row */
         .stats-grid {
             display: grid;
@@ -143,8 +80,8 @@
             width: 48px;
             height: 48px;
             border-radius: 12px;
-            background: #eff6ff;
-            color: var(--primary);
+            background: #f3f4f6; /* Grey for history */
+            color: #4b5563;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -202,12 +139,13 @@
         
         .session-info { display: flex; gap: 16px; align-items: center; }
         .date-box {
-            background: #f9fafb;
+            background: #f3f4f6; /* Muted for history */
             border: 1px solid var(--border);
             border-radius: 8px;
             padding: 6px 12px;
             text-align: center;
             min-width: 50px;
+            opacity: 0.8;
         }
         .date-month { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
         .date-day { font-size: 1.1rem; font-weight: 700; color: var(--text); }
@@ -227,12 +165,10 @@
             border-radius: 4px;
             transition: all 0.2s;
         }
-        .icon-btn:hover { background: #eff6ff; color: var(--primary); }
         .attendee-badge {
-            background: #ecfdf5; color: #059669; 
+            background: #f3f4f6; color: #4b5563; 
             padding: 4px 10px; border-radius: 12px; font-weight: 600; font-size: 0.85rem;
         }
-        .attendee-badge.empty { background: #f3f4f6; color: #9ca3af; }
 
         /* Accordion Content */
         .attendees-list {
@@ -268,15 +204,15 @@
         }
         .tool-btn {
             font-size: 0.8rem;
-            color: var(--primary);
-            background: #eff6ff;
+            color: #4b5563;
+            background: #f3f4f6;
             border: none;
             padding: 6px 12px;
             border-radius: 6px;
             cursor: pointer;
             font-weight: 600;
         }
-        .tool-btn:hover { background: #dbeafe; }
+        .tool-btn:hover { background: #e5e7eb; }
 
         .loading { text-align: center; margin-top: 80px; color: var(--text-muted); }
         .hidden { display: none !important; }
@@ -290,47 +226,24 @@
                 align-items: stretch;
             }
             .navbar h1 { justify-content: center; }
-            .nav-actions { display: flex; justify-content: center; gap: 10px; }
-            .nav-actions button { flex: 1; }
+            .nav-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;}
+            .nav-actions a, .nav-actions button { flex: 1; text-align: center; }
 
             .container { margin: 20px auto; }
-            
-            .hero-card {
-                flex-direction: column;
-                align-items: stretch;
-                text-align: center;
-                gap: 24px;
-            }
-            .hero-meta {
-                flex-direction: column;
-                gap: 12px;
-                align-items: center;
-                justify-content: center;
-            }
-            .hero-actions { width: 100%; }
-            
             .stats-grid { grid-template-columns: 1fr; }
-            
             .dashboard-grid { grid-template-columns: 1fr; }
-            
-            .session-summary {
-                padding: 12px 16px;
-            }
-            .attendee {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 4px;
-            }
+            .session-summary { padding: 12px 16px; }
+            .attendee { flex-direction: column; align-items: flex-start; gap: 4px; }
         }
     </style>
 </head>
 <body>
 
     <nav class="navbar">
-        <h1><i class="fa-solid fa-calendar-check" style="color:var(--primary)"></i> Be Webinars</h1>
+        <h1><i class="fa-solid fa-clock-rotate-left" style="color:#6b7280"></i> History</h1>
         <div class="nav-actions">
-            <a href="#" class="active">Upcoming</a>
-            <a href="/history.html">History</a>
+            <a href="/dashboard.html">Upcoming</a>
+            <a href="#" class="active">History</a>
             <button onclick="logout()"><i class="fa-solid fa-sign-out-alt"></i> Logout</button>
         </div>
     </nav>
@@ -339,37 +252,25 @@
         
         <div id="loading" class="loading">
             <i class="fa-solid fa-circle-notch fa-spin fa-2x"></i>
-            <p style="margin-top:10px">Syncing with Calendly...</p>
+            <p style="margin-top:10px">Loading past webinars...</p>
         </div>
 
         <div id="main-content" class="hidden">
             
-            <!-- Hero Section: Next Session -->
-            <div id="hero-section" class="hero-section">
-                <!-- Injected via JS -->
-            </div>
-
             <!-- Global Stats -->
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon"><i class="fa-solid fa-users"></i></div>
                     <div class="stat-info">
-                        <div>Total Signups</div>
+                        <div>Total Past Attendees</div>
                         <div class="stat-value" id="total-participants">-</div>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-video"></i></div>
+                    <div class="stat-icon"><i class="fa-solid fa-calendar-check"></i></div>
                     <div class="stat-info">
-                        <div>Upcoming Sessions</div>
+                        <div>Past Sessions</div>
                         <div class="stat-value" id="total-sessions">-</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fa-solid fa-calendar-day"></i></div>
-                    <div class="stat-info">
-                        <div>Active Collectives</div>
-                        <div class="stat-value">4</div>
                     </div>
                 </div>
             </div>
@@ -382,9 +283,6 @@
     </div>
 
     <script>
-        // --- State ---
-        let rawData = null;
-
         // --- Init ---
         fetch('/api/auth-status')
             .then(res => res.json())
@@ -392,7 +290,7 @@
                 if (!status.isLoggedIn) {
                     window.location.href = '/login.html';
                 } else if (!status.isCalendlyConnected) {
-                    window.location.href = '/connect-calendly'; // Simplify flow
+                    window.location.href = '/connect-calendly';
                 } else {
                     loadData();
                 }
@@ -403,13 +301,12 @@
             document.getElementById('loading').classList.remove('hidden');
             document.getElementById('main-content').classList.add('hidden');
             try {
-                const res = await fetch('/api/webinars');
+                // Fetch PAST data
+                const res = await fetch('/api/webinars/past');
                 if (res.status === 401) return window.location.href = '/login.html';
                 
                 const data = await res.json();
-                rawData = data;
                 
-                renderHero(data.globalStats.nextSession);
                 renderStats(data.globalStats);
                 renderGrid(data.collectives);
                 
@@ -417,49 +314,11 @@
                 document.getElementById('main-content').classList.remove('hidden');
             } catch (e) {
                 console.error(e);
-                alert('Failed to load data');
+                alert('Failed to load history');
             }
         }
 
         // --- Renderers ---
-
-        function renderHero(session) {
-            const hero = document.getElementById('hero-section');
-            if (!session) {
-                hero.style.display = 'none';
-                return;
-            }
-
-            // Calculate dates
-            const startDate = new Date(session.isoDate);
-            const now = new Date();
-            const diffMs = startDate - now;
-            const diffHrs = Math.ceil(diffMs / (1000 * 60 * 60));
-            const isToday = startDate.toDateString() === now.toDateString();
-
-            const timeText = isToday 
-                ? `Starting in ${diffHrs > 0 ? diffHrs + ' hours' : 'soon'}` 
-                : startDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-
-            hero.innerHTML = `
-                <div class="hero-card">
-                    <div class="hero-content">
-                        <h2><i class="fa-solid fa-bolt"></i> Next Up</h2>
-                        <div class="hero-title">${session.eventName}</div>
-                        <div class="hero-meta">
-                            <div><i class="fa-regular fa-clock"></i> ${session.timeString}</div>
-                            <div><i class="fa-regular fa-calendar"></i> ${timeText}</div>
-                            <div class="countdown-badge"><i class="fa-solid fa-user-group"></i> ${session.attendees.length} Registered</div>
-                        </div>
-                    </div>
-                    <div class="hero-actions">
-                        ${session.zoomLink ? `<a href="${session.zoomLink}" target="_blank" class="btn-hero"><i class="fa-solid fa-video"></i> Start Zoom</a>` : '<div class="btn-hero secondary" style="cursor:not-allowed">No Zoom Link</div>'}
-                        <button onclick='copyEmailsForSession(${JSON.stringify(session.attendees)})' class="btn-hero secondary"><i class="fa-regular fa-copy"></i> Copy Emails</button>
-                    </div>
-                </div>
-            `;
-            hero.style.display = 'block';
-        }
 
         function renderStats(stats) {
             document.getElementById('total-participants').innerText = stats.totalParticipants;
@@ -476,7 +335,7 @@
                 
                 let sessionsHtml = '';
                 if (item.sessions.length === 0) {
-                    sessionsHtml = '<div style="padding:30px; color:#9ca3af; text-align:center; font-style:italic">No upcoming sessions scheduled.</div>';
+                    sessionsHtml = '<div style="padding:30px; color:#9ca3af; text-align:center; font-style:italic">No past sessions found.</div>';
                 } else {
                     sessionsHtml = item.sessions.map((s, idx) => {
                         const month = s.monthPart;
@@ -490,10 +349,6 @@
                             </div>
                         `).join('');
 
-                        // Serialize attendees safely for onclick
-                        // We use a global registry or just simplified passing for this demo
-                        // To avoid quote escaping hell, we attach data via ID or just pass emails
-                        
                         return `
                         <div class="session-item" id="session-${item.collective}-${idx}">
                             <div class="session-summary" onclick="toggleAccordion(this)">
@@ -508,10 +363,9 @@
                                     </div>
                                 </div>
                                 <div class="session-actions">
-                                    <div class="attendee-badge ${!hasAttendees ? 'empty' : ''}">
+                                    <div class="attendee-badge">
                                         ${s.attendees.length}
                                     </div>
-                                    ${s.zoomLink ? `<a href="${s.zoomLink}" target="_blank" class="icon-btn" title="Launch Zoom" onclick="event.stopPropagation()"><i class="fa-solid fa-video"></i></a>` : ''}
                                     <i class="fa-solid fa-chevron-down icon-btn" style="pointer-events:none"></i>
                                 </div>
                             </div>
@@ -525,7 +379,7 @@
                                         <i class="fa-regular fa-copy"></i> Copy Emails
                                     </button>
                                 </div>
-                                ${attendeesList || '<div style="padding:15px; text-align:center; color:#9ca3af; font-size:0.9rem;">No registrations yet.</div>'}
+                                ${attendeesList || '<div style="padding:15px; text-align:center; color:#9ca3af; font-size:0.9rem;">No attendees.</div>'}
                             </div>
                         </div>
                         `;
@@ -535,7 +389,7 @@
                 card.innerHTML = `
                     <div class="card-header">
                         <h2>${item.collective}</h2>
-                        <span class="badge">${item.totalUpcoming} Upcoming</span>
+                        <span class="badge">${item.totalUpcoming} Attendees</span>
                     </div>
                     <div class="sessions-container">
                         ${sessionsHtml}

@@ -185,6 +185,84 @@ async function makeCalendlyRequest(url, params = {}) {
     }
 }
 
+// Shared helper to process events
+async function processEvents(events) {
+    // Step C: Fetch Invitees
+    const detailedEvents = await Promise.all(events.map(async (event) => {
+        try {
+            const uuid = event.uri.split('/').pop();
+            const inviteesRes = await makeCalendlyRequest(`https://api.calendly.com/scheduled_events/${uuid}/invitees`);
+            const invitees = inviteesRes.data.collection.map(inv => ({
+                name: inv.name,
+                email: inv.email,
+                status: inv.status
+            }));
+            return { ...event, inviteeDetails: invitees };
+        } catch (err) {
+            console.error(`Failed to fetch invitees`, err.message);
+            return { ...event, inviteeDetails: [] };
+        }
+    }));
+
+    // Step D: Process Data
+    const webinars = { 'Mumbai': [], 'Bhopal': [], 'Hammiyala': [], 'Poomaale': [] };
+    const targetNames = ['Mumbai', 'Bhopal', 'Hammiyala', 'Poomaale'];
+
+    detailedEvents.forEach(event => {
+        const name = event.name;
+        const collective = targetNames.find(t => name.toLowerCase().includes(t.toLowerCase()));
+        
+        if (collective) {
+            webinars[collective].push({
+                rawEvent: event,
+                startTime: new Date(event.start_time),
+                invitees: event.inviteeDetails
+            });
+        }
+    });
+
+    const collectiveStats = targetNames.map(name => {
+        const rawList = webinars[name];
+        const sessionsMap = {};
+
+        rawList.forEach(item => {
+            const key = item.startTime.toISOString();
+            if (!sessionsMap[key]) {
+                sessionsMap[key] = {
+                    date: item.startTime,
+                    eventName: item.rawEvent.name,
+                    location: item.rawEvent.location, // Store location data
+                    attendees: []
+                };
+            }
+            sessionsMap[key].attendees.push(...item.invitees);
+        });
+
+        const sessions = Object.values(sessionsMap)
+            .sort((a, b) => a.date - b.date)
+            .map(s => ({
+                eventName: s.eventName,
+                dateString: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+                timeString: s.date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+                dayPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }),
+                monthPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' }),
+                isoDate: s.date,
+                attendees: s.attendees,
+                zoomLink: (s.location && s.location.join_url) ? s.location.join_url : null
+            }));
+
+        const totalAttendees = sessions.reduce((sum, s) => sum + s.attendees.length, 0);
+
+        return {
+            collective: name,
+            totalUpcoming: totalAttendees,
+            sessions: sessions
+        };
+    });
+
+    return collectiveStats;
+}
+
 app.get('/api/webinars', requireLogin, async (req, res) => {
     if (!calendlyTokens.accessToken) {
         return res.status(400).json({ error: 'Calendly not connected' });
@@ -195,92 +273,17 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
         const userRes = await makeCalendlyRequest('https://api.calendly.com/users/me');
         const userUri = userRes.data.resource.uri;
 
-        // Step B: Get Scheduled Events (Active)
+        // Step B: Get Scheduled Events (Active & FUTURE ONLY)
         const eventsRes = await makeCalendlyRequest('https://api.calendly.com/scheduled_events', {
             user: userUri,
             status: 'active',
             count: 100,
-            sort: 'start_time:asc'
+            sort: 'start_time:asc',
+            min_start_time: new Date().toISOString()
         });
 
-        const events = eventsRes.data.collection;
+        const collectiveStats = await processEvents(eventsRes.data.collection);
         
-        // Step C: Fetch Invitees
-        const detailedEvents = await Promise.all(events.map(async (event) => {
-            try {
-                const uuid = event.uri.split('/').pop();
-                // We also use the helper here to ensure sub-requests also refresh if needed
-                const inviteesRes = await makeCalendlyRequest(`https://api.calendly.com/scheduled_events/${uuid}/invitees`);
-
-                const invitees = inviteesRes.data.collection.map(inv => ({
-                    name: inv.name,
-                    email: inv.email,
-                    status: inv.status
-                }));
-
-                return { ...event, inviteeDetails: invitees };
-            } catch (err) {
-                console.error(`Failed to fetch invitees`, err.message);
-                return { ...event, inviteeDetails: [] };
-            }
-        }));
-
-        // Step D: Process Data
-        const webinars = { 'Mumbai': [], 'Bhopal': [], 'Hammiyala': [], 'Poomaale': [] };
-        const targetNames = ['Mumbai', 'Bhopal', 'Hammiyala', 'Poomaale'];
-
-        detailedEvents.forEach(event => {
-            const name = event.name;
-            const collective = targetNames.find(t => name.toLowerCase().includes(t.toLowerCase()));
-            
-            if (collective) {
-                webinars[collective].push({
-                    rawEvent: event,
-                    startTime: new Date(event.start_time),
-                    invitees: event.inviteeDetails
-                });
-            }
-        });
-
-        const collectiveStats = targetNames.map(name => {
-            const rawList = webinars[name];
-            const sessionsMap = {};
-
-            rawList.forEach(item => {
-                const key = item.startTime.toISOString();
-                if (!sessionsMap[key]) {
-                    sessionsMap[key] = {
-                        date: item.startTime,
-                        eventName: item.rawEvent.name,
-                        location: item.rawEvent.location, // Store location data
-                        attendees: []
-                    };
-                }
-                sessionsMap[key].attendees.push(...item.invitees);
-            });
-
-            const sessions = Object.values(sessionsMap)
-                .sort((a, b) => a.date - b.date)
-                .map(s => ({
-                    eventName: s.eventName,
-                    dateString: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-                    timeString: s.date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
-                    dayPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }),
-                    monthPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' }),
-                    isoDate: s.date,
-                    attendees: s.attendees,
-                    zoomLink: (s.location && s.location.join_url) ? s.location.join_url : null
-                }));
-
-            const totalAttendees = sessions.reduce((sum, s) => sum + s.attendees.length, 0);
-
-            return {
-                collective: name,
-                totalUpcoming: totalAttendees,
-                sessions: sessions
-            };
-        });
-
         // Calculate Global Stats
         const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
         
@@ -302,10 +305,41 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
 
     } catch (error) {
         console.error('Error fetching data:', error.response ? error.response.data : error.message);
-        // If it was a 401 that failed even after retry
         if (error.response && error.response.status === 401) {
              return res.status(401).json({ error: 'Authentication expired' });
         }
+        res.status(500).json({ error: 'Failed to fetch data' });
+    }
+});
+
+app.get('/api/webinars/past', requireLogin, async (req, res) => {
+    if (!calendlyTokens.accessToken) return res.status(400).json({ error: 'Calendly not connected' });
+
+    try {
+        const userRes = await makeCalendlyRequest('https://api.calendly.com/users/me');
+        const userUri = userRes.data.resource.uri;
+
+        // Step B: Get Scheduled Events (Active & PAST ONLY)
+        const eventsRes = await makeCalendlyRequest('https://api.calendly.com/scheduled_events', {
+            user: userUri,
+            status: 'active',
+            count: 100,
+            sort: 'start_time:desc',
+            max_start_time: new Date().toISOString()
+        });
+
+        const collectiveStats = await processEvents(eventsRes.data.collection);
+        
+        const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
+        
+        res.json({
+            collectives: collectiveStats,
+            globalStats: { totalParticipants, totalSessions: eventsRes.data.collection.length }
+        });
+
+    } catch (error) {
+        console.error('Error fetching past data:', error.message);
+        if (error.response && error.response.status === 401) return res.status(401).json({ error: 'Authentication expired' });
         res.status(500).json({ error: 'Failed to fetch data' });
     }
 });
