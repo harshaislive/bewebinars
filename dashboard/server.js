@@ -191,13 +191,27 @@ async function processEvents(events) {
     const detailedEvents = await Promise.all(events.map(async (event) => {
         try {
             const uuid = event.uri.split('/').pop();
-            const inviteesRes = await makeCalendlyRequest(`https://api.calendly.com/scheduled_events/${uuid}/invitees`);
-            const invitees = inviteesRes.data.collection.map(inv => ({
-                name: inv.name,
-                email: inv.email,
-                status: inv.status
-            }));
-            return { ...event, inviteeDetails: invitees };
+            let allInvitees = [];
+            let url = `https://api.calendly.com/scheduled_events/${uuid}/invitees`;
+            let params = { count: 100 };
+
+            while (url) {
+                const inviteesRes = await makeCalendlyRequest(url, params);
+                const invitees = inviteesRes.data.collection.map(inv => ({
+                    name: inv.name,
+                    email: inv.email,
+                    status: inv.status
+                }));
+                allInvitees = allInvitees.concat(invitees);
+
+                if (inviteesRes.data.pagination && inviteesRes.data.pagination.next_page) {
+                    url = inviteesRes.data.pagination.next_page;
+                    params = {}; // next_page URL includes params
+                } else {
+                    url = null;
+                }
+            }
+            return { ...event, inviteeDetails: allInvitees };
         } catch (err) {
             console.error(`Failed to fetch invitees`, err.message);
             return { ...event, inviteeDetails: [] };
