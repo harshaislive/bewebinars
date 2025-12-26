@@ -291,6 +291,14 @@ function parseDateSafe(value) {
     return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function normalizeEmail(value) {
+    return (value || '').toLowerCase().trim();
+}
+
+function normalizeName(value) {
+    return (value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function filterAndDedupAttendance(attendees, sessionStart, sessionEnd) {
     if (!Array.isArray(attendees) || attendees.length === 0) return [];
     const start = parseDateSafe(sessionStart);
@@ -337,21 +345,31 @@ function matchAttendanceToRegistrants(attendanceList, registrants) {
     if (!Array.isArray(attendanceList) || attendanceList.length === 0) {
         return { matched: [], external: [] };
     }
-    const registrantEmails = new Set(
-        (registrants || [])
-            .map(r => (r.email || '').toLowerCase().trim())
-            .filter(Boolean)
-    );
+    const registrantEmails = new Set();
+    const registrantNames = new Set();
+    (registrants || []).forEach(r => {
+        const emailKey = normalizeEmail(r.email);
+        if (emailKey) registrantEmails.add(emailKey);
+        const nameKey = normalizeName(r.name);
+        if (nameKey) registrantNames.add(nameKey);
+    });
     const matched = [];
     const external = [];
 
     attendanceList.forEach(entry => {
-        const email = (entry.email || '').toLowerCase().trim();
+        const email = normalizeEmail(entry.email);
         if (email && registrantEmails.has(email)) {
             matched.push(entry);
-        } else {
-            external.push(entry);
+            registrantEmails.delete(email);
+            return;
         }
+        const nameKey = normalizeName(entry.name);
+        if (nameKey && registrantNames.has(nameKey)) {
+            matched.push(entry);
+            registrantNames.delete(nameKey);
+            return;
+        }
+        external.push(entry);
     });
     return { matched, external };
 }
