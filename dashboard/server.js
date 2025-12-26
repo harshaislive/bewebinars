@@ -333,6 +333,29 @@ function filterAndDedupAttendance(attendees, sessionStart, sessionEnd) {
     });
 }
 
+function matchAttendanceToRegistrants(attendanceList, registrants) {
+    if (!Array.isArray(attendanceList) || attendanceList.length === 0) {
+        return { matched: [], external: [] };
+    }
+    const registrantEmails = new Set(
+        (registrants || [])
+            .map(r => (r.email || '').toLowerCase().trim())
+            .filter(Boolean)
+    );
+    const matched = [];
+    const external = [];
+
+    attendanceList.forEach(entry => {
+        const email = (entry.email || '').toLowerCase().trim();
+        if (email && registrantEmails.has(email)) {
+            matched.push(entry);
+        } else {
+            external.push(entry);
+        }
+    });
+    return { matched, external };
+}
+
 // Shared helper to process events
 async function processEvents(events, options = {}) {
     const includeAttendance = !!options.includeAttendance && zoomConfigAvailable();
@@ -422,17 +445,20 @@ async function processEvents(events, options = {}) {
                     zoomMeetingId: null,
                     attendanceCount: null,
                     attendanceList: [],
-                    attendanceRate: null
+                    attendanceRate: null,
+                    externalAttendance: 0
                 };
 
                 if (includeAttendance && zoomLink) {
                     const meetingId = extractZoomMeetingId(zoomLink);
                     if (meetingId) {
                         const rawAttendance = await fetchZoomParticipants(meetingId);
-                        const zoomAttendees = filterAndDedupAttendance(rawAttendance, s.date, s.endDate);
+                        const dedupedAttendance = filterAndDedupAttendance(rawAttendance, s.date, s.endDate);
+                        const { matched, external } = matchAttendanceToRegistrants(dedupedAttendance, s.attendees);
                         baseSession.zoomMeetingId = meetingId;
-                        baseSession.attendanceList = zoomAttendees;
-                        baseSession.attendanceCount = zoomAttendees.length;
+                        baseSession.attendanceList = matched;
+                        baseSession.attendanceCount = matched.length;
+                        baseSession.externalAttendance = external.length;
                         if (baseSession.attendees.length > 0 && baseSession.attendanceCount !== null) {
                             baseSession.attendanceRate = Math.round((baseSession.attendanceCount / baseSession.attendees.length) * 100);
                         }

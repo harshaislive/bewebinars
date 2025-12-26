@@ -215,6 +215,18 @@
             font-size: 0.75rem;
             font-weight: 600;
         }
+        .external-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #fef9c3;
+            color: #854d0e;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
         .attendance-section {
             border-top: 1px solid var(--border);
         }
@@ -444,6 +456,7 @@
                                     <span>
                                         <strong>${s.attendanceCount ?? 0}</strong> Attended
                                         ${s.attendanceRate !== null ? `<span class="rate-badge">${s.attendanceRate}%</span>` : ''}
+                                        ${s.externalAttendance ? `<span class="external-chip"><i class="fa-solid fa-user-plus"></i> +${s.externalAttendance} Guests</span>` : ''}
                                     </span>
                                 </div>
                                 <div class="toolbar">

@@ -323,11 +323,12 @@
                                 <th>Signups</th>
                                 <th>Attendance</th>
                                 <th>Rate</th>
+                                <th>Guest Drop-ins</th>
                             </tr>
                         </thead>
                         <tbody id="sessions-table">
                             <tr>
-                                <td colspan="6" class="empty-state">No sessions in this filter.</td>
+                                <td colspan="7" class="empty-state">No sessions in this filter.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -410,6 +411,7 @@
                         attendees: session.attendees || [],
                         attendanceCount: session.attendanceCount ?? 0,
                         attendanceRate: session.attendanceRate ?? computeRate(session),
+                        externalAttendance: session.externalAttendance || 0,
                         zoomMeetingId: session.zoomMeetingId || null
                     });
                 });
@@ -629,7 +631,7 @@
             if (!sessions.length) {
                 const row = document.createElement('tr');
                 const cell = document.createElement('td');
-                cell.colSpan = 6;
+                cell.colSpan = 7;
                 cell.className = 'empty-state';
                 cell.innerText = 'No sessions in this filter.';
                 row.appendChild(cell);
@@ -649,6 +651,7 @@
                         <td>${s.attendees.length}</td>
                         <td>${s.attendanceCount || 0}</td>
                         <td><span class="rate-badge">${s.attendanceRate || 0}%</span></td>
+                        <td>${s.externalAttendance || 0}</td>
                     `;
                     tbody.appendChild(row);
                 });
@@ -674,6 +677,7 @@
             }, null);
 
             const avgSignups = Math.round(sessions.reduce((sum, s) => sum + s.attendees.length, 0) / sessions.length);
+            const guestEntries = sessions.reduce((sum, s) => sum + (s.externalAttendance || 0), 0);
 
             const insightItems = [];
             if (bestSession) {
@@ -692,6 +696,12 @@
                 icon: 'fa-people-line',
                 text: `Average session sees ${avgSignups || 0} registrations.`
             });
+            if (guestEntries) {
+                insightItems.push({
+                    icon: 'fa-user-plus',
+                    text: `${guestEntries} guest attendees joined outside Calendly registrations.`
+                });
+            }
             if (state.upcoming) {
                 insightItems.push({
                     icon: 'fa-calendar-days',
