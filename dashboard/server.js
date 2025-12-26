@@ -285,6 +285,54 @@ function extractZoomMeetingId(zoomUrl) {
     return digits ? digits[1] : null;
 }
 
+function parseDateSafe(value) {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function filterAndDedupAttendance(attendees, sessionStart, sessionEnd) {
+    if (!Array.isArray(attendees) || attendees.length === 0) return [];
+    const start = parseDateSafe(sessionStart);
+    const end = parseDateSafe(sessionEnd);
+    const fallbackEnd = end || (start ? new Date(start.getTime() + (2 * 60 * 60 * 1000)) : null);
+    const windowStart = start ? new Date(start.getTime() - (2 * 60 * 60 * 1000)) : null; // allow early joins
+    const windowEnd = fallbackEnd ? new Date(fallbackEnd.getTime() + (60 * 60 * 1000)) : null; // allow late departures
+
+    const filtered = attendees.filter(entry => {
+        if (!windowStart || !windowEnd) return true;
+        const join = parseDateSafe(entry.joinTime);
+        if (!join) return true;
+        return join >= windowStart && join <= windowEnd;
+    });
+
+    const deduped = new Map();
+    filtered.forEach(entry => {
+        const key = entry.email 
+            ? entry.email.toLowerCase().trim()
+            : `${(entry.name || 'guest').toLowerCase()}-${entry.joinTime || ''}`;
+        const existing = deduped.get(key);
+        if (!existing) {
+            deduped.set(key, entry);
+            return;
+        }
+        const currentDuration = typeof existing.duration === 'number' ? existing.duration : 0;
+        const newDuration = typeof entry.duration === 'number' ? entry.duration : 0;
+        if (newDuration > currentDuration) {
+            deduped.set(key, entry);
+        }
+    });
+
+    return Array.from(deduped.values()).sort((a, b) => {
+        const aTime = parseDateSafe(a.joinTime);
+        const bTime = parseDateSafe(b.joinTime);
+        if (!aTime && !bTime) return 0;
+        if (!aTime) return 1;
+        if (!bTime) return -1;
+        return aTime - bTime;
+    });
+}
+
 // Shared helper to process events
 async function processEvents(events, options = {}) {
     const includeAttendance = !!options.includeAttendance && zoomConfigAvailable();
@@ -347,6 +395,7 @@ async function processEvents(events, options = {}) {
             if (!sessionsMap[key]) {
                 sessionsMap[key] = {
                     date: item.startTime,
+                    endDate: item.rawEvent.end_time ? new Date(item.rawEvent.end_time) : null,
                     eventName: item.rawEvent.name,
                     location: item.rawEvent.location, // Store location data
                     attendees: []
@@ -366,6 +415,8 @@ async function processEvents(events, options = {}) {
                     dayPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }),
                     monthPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' }),
                     isoDate: s.date,
+                    startDate: s.date,
+                    endDate: s.endDate || null,
                     attendees: s.attendees,
                     zoomLink,
                     zoomMeetingId: null,
@@ -377,7 +428,8 @@ async function processEvents(events, options = {}) {
                 if (includeAttendance && zoomLink) {
                     const meetingId = extractZoomMeetingId(zoomLink);
                     if (meetingId) {
-                        const zoomAttendees = await fetchZoomParticipants(meetingId);
+                        const rawAttendance = await fetchZoomParticipants(meetingId);
+                        const zoomAttendees = filterAndDedupAttendance(rawAttendance, s.date, s.endDate);
                         baseSession.zoomMeetingId = meetingId;
                         baseSession.attendanceList = zoomAttendees;
                         baseSession.attendanceCount = zoomAttendees.length;
