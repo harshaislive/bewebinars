@@ -192,6 +192,60 @@
         }
         .attendee-name { font-weight: 500; }
         .attendee-email { color: var(--text-muted); font-size: 0.85rem; }
+        .attendee-phone { font-size: 0.9rem; color: var(--text); font-weight: 500; }
+        .attendance-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+        .attendance-summary strong {
+            font-size: 1rem;
+        }
+        .rate-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            margin-left: 6px;
+            border-radius: 999px;
+            background: #e0f2fe;
+            color: #0369a1;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .attendance-section {
+            border-top: 1px solid var(--border);
+        }
+        .attendance-section h4 {
+            margin: 0;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #4b5563;
+            padding: 16px 20px 8px 20px;
+        }
+        .attendance-row {
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+        .attendance-meta {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+        .duration-chip {
+            padding: 2px 10px;
+            border-radius: 999px;
+            background: #e5e7eb;
+            color: #374151;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
 
         /* Tools */
         .toolbar {
@@ -234,6 +288,8 @@
             .dashboard-grid { grid-template-columns: 1fr; }
             .session-summary { padding: 12px 16px; }
             .attendee { flex-direction: column; align-items: flex-start; gap: 4px; }
+            .attendance-summary { flex-direction: column; align-items: flex-start; gap: 6px; }
+            .attendance-row { flex-direction: column; align-items: flex-start; gap: 4px; }
         }
     </style>
 </head>
@@ -262,8 +318,15 @@
                 <div class="stat-card">
                     <div class="stat-icon"><i class="fa-solid fa-users"></i></div>
                     <div class="stat-info">
-                        <div>Total Past Attendees</div>
+                        <div>Total Signups</div>
                         <div class="stat-value" id="total-participants">-</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fa-solid fa-user-check"></i></div>
+                    <div class="stat-info">
+                        <div>Actual Attendance</div>
+                        <div class="stat-value" id="total-attendance">-</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -322,6 +385,9 @@
 
         function renderStats(stats) {
             document.getElementById('total-participants').innerText = stats.totalParticipants;
+            if (document.getElementById('total-attendance')) {
+                document.getElementById('total-attendance').innerText = stats.totalAttendance ?? '-';
+            }
             document.getElementById('total-sessions').innerText = stats.totalSessions;
         }
 
@@ -340,12 +406,13 @@
                     sessionsHtml = item.sessions.map((s, idx) => {
                         const month = s.monthPart;
                         const day = s.dayPart;
-                        const hasAttendees = s.attendees.length > 0;
-
                         const attendeesList = s.attendees.map(a => `
                             <div class="attendee">
-                                <span class="attendee-name">${a.name}</span>
-                                <span class="attendee-email">${a.email}</span>
+                                <div>
+                                    <span class="attendee-name">${a.name}</span><br>
+                                    <span class="attendee-email">${a.email}</span>
+                                </div>
+                                <span class="attendee-phone">${a.phone || 'N/A'}</span>
                             </div>
                         `).join('');
 
@@ -364,13 +431,20 @@
                                 </div>
                                 <div class="session-actions">
                                     <div class="attendee-badge">
-                                        ${s.attendees.length}
+                                        ${(s.attendanceCount ?? 0)}/${s.attendees.length}
                                     </div>
                                     <i class="fa-solid fa-chevron-down icon-btn" style="pointer-events:none"></i>
                                 </div>
                             </div>
                             
                             <div class="attendees-list">
+                                <div class="attendance-summary">
+                                    <span><strong>${s.attendees.length}</strong> Registered</span>
+                                    <span>
+                                        <strong>${s.attendanceCount ?? 0}</strong> Attended
+                                        ${s.attendanceRate !== null ? `<span class="rate-badge">${s.attendanceRate}%</span>` : ''}
+                                    </span>
+                                </div>
                                 <div class="toolbar">
                                     <button class="tool-btn" onclick='downloadCSV("${s.eventName}", "${s.dateString}", ${JSON.stringify(s.attendees)})'>
                                         <i class="fa-solid fa-download"></i> CSV
@@ -383,6 +457,41 @@
                                     </button>
                                 </div>
                                 ${attendeesList || '<div style="padding:15px; text-align:center; color:#9ca3af; font-size:0.9rem;">No attendees.</div>'}
+                                ${
+                                    (s.attendanceList && s.attendanceList.length)
+                                        ? `
+                                        <div class="attendance-section">
+                                            <h4>Zoom Attendance</h4>
+                                            <div class="toolbar">
+                                                <button class="tool-btn" onclick='downloadAttendanceCSV("${s.eventName}", "${s.dateString}", ${JSON.stringify(s.attendanceList)})'>
+                                                    <i class="fa-solid fa-download"></i> Attendance CSV
+                                                </button>
+                                                <button class="tool-btn" onclick='copyEmailsForSession(${JSON.stringify(s.attendanceList)})'>
+                                                    <i class="fa-solid fa-user-check"></i> Copy Attendance Emails
+                                                </button>
+                                                <button class="tool-btn" onclick='copyPhonesForSession(${JSON.stringify(s.attendanceList)})'>
+                                                    <i class="fa-solid fa-phone"></i> Copy Attendance Phones
+                                                </button>
+                                            </div>
+                                            ${s.attendanceList.map(a => `
+                                                <div class="attendance-row">
+                                                    <div>
+                                                        <span class="attendee-name">${a.name || 'Guest'}</span><br>
+                                                        <span class="attendee-email">${a.email || 'No email'}</span>
+                                                    </div>
+                                                    <div style="text-align:right;">
+                                                        <div class="attendee-phone">${a.phone || 'N/A'}</div>
+                                                        <div class="attendance-meta">
+                                                            ${renderTimeRange(a.joinTime, a.leaveTime) || 'No timing data'}
+                                                            ${renderDurationChip(a.duration)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                        `
+                                        : '<div class="attendance-section"><h4>Zoom Attendance</h4><div style="padding:15px; text-align:center; color:#9ca3af; font-size:0.9rem;">No attendance data.</div></div>'
+                                }
                             </div>
                         </div>
                         `;
@@ -392,7 +501,7 @@
                 card.innerHTML = `
                     <div class="card-header">
                         <h2>${item.collective}</h2>
-                        <span class="badge">${item.totalUpcoming} Attendees</span>
+                        <span class="badge">${item.totalAttendance || 0}/${item.totalUpcoming} Attended (${item.totalUpcoming ? Math.round(((item.totalAttendance || 0) / item.totalUpcoming) * 100) : 0}%)</span>
                     </div>
                     <div class="sessions-container">
                         ${sessionsHtml}
@@ -417,9 +526,13 @@
                 alert('No attendees to copy.');
                 return;
             }
-            const emails = attendees.map(a => a.email).join(', ');
-            navigator.clipboard.writeText(emails).then(() => {
-                alert(`Copied ${attendees.length} emails to clipboard!`);
+            const emails = attendees.map(a => a.email).filter(Boolean);
+            if (emails.length === 0) {
+                alert('No emails available for this session.');
+                return;
+            }
+            navigator.clipboard.writeText(emails.join(', ')).then(() => {
+                alert(`Copied ${emails.length} emails to clipboard!`);
             });
         }
 
@@ -438,6 +551,25 @@
             });
         }
 
+        function formatTime(value) {
+            if (!value) return '';
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) return '';
+            return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderTimeRange(start, end) {
+            const from = formatTime(start);
+            const to = formatTime(end);
+            if (!from && !to) return '';
+            return `${from || '-'} - ${to || '-'}`;
+        }
+
+        function renderDurationChip(duration) {
+            if (typeof duration !== 'number' || Number.isNaN(duration)) return '';
+            return `<span class="duration-chip">${duration} mins</span>`;
+        }
+
         function downloadCSV(eventName, date, attendees) {
             if (!attendees || attendees.length === 0) {
                 alert('No data to export.');
@@ -445,16 +577,39 @@
             }
             
             let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Name,Email,Status\n";
+            csvContent += "Name,Email,Phone,Status\n";
             
             attendees.forEach(row => {
-                csvContent += `"${row.name}","${row.email}","${row.status}"\n`;
+                csvContent += `"${row.name || ''}","${row.email || ''}","${row.phone || ''}","${row.status || ''}"\n`;
             });
 
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
             link.setAttribute("href", encodedUri);
             link.setAttribute("download", `${eventName}_${date}_export.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function downloadAttendanceCSV(eventName, date, attendees) {
+            if (!attendees || attendees.length === 0) {
+                alert('No attendance data to export.');
+                return;
+            }
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Name,Email,Phone,Join Time,Leave Time,Duration (mins)\n";
+            
+            attendees.forEach(row => {
+                const duration = (typeof row.duration === 'number' && !Number.isNaN(row.duration)) ? row.duration : '';
+                csvContent += `"${row.name || ''}","${row.email || ''}","${row.phone || ''}","${row.joinTime || ''}","${row.leaveTime || ''}","${duration}"\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `${eventName}_${date}_attendance.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);

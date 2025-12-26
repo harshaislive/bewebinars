@@ -9,6 +9,12 @@ const fs = require('fs');
 const app = express();
 const PORT = 3000;
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
+const zoomCreds = {
+    accountId: process.env.ZOOM_ACCOUNT_ID,
+    clientId: process.env.ZOOM_CLIENT_ID,
+    clientSecret: process.env.ZOOM_CLIENT_SECRET
+};
+let zoomTokenCache = { token: null, expiresAt: 0 };
 
 // Middleware
 app.use(express.json());
@@ -51,6 +57,77 @@ function saveTokens() {
 
 // Load on startup
 loadTokens();
+
+function zoomConfigAvailable() {
+    return zoomCreds.accountId && zoomCreds.clientId && zoomCreds.clientSecret;
+}
+
+async function getZoomAccessToken() {
+    if (!zoomConfigAvailable()) {
+        return null;
+    }
+    const now = Date.now();
+    if (zoomTokenCache.token && zoomTokenCache.expiresAt - 60000 > now) {
+        return zoomTokenCache.token;
+    }
+    try {
+        const credentials = Buffer.from(`${zoomCreds.clientId}:${zoomCreds.clientSecret}`).toString('base64');
+        const response = await axios.post('https://zoom.us/oauth/token', null, {
+            params: {
+                grant_type: 'account_credentials',
+                account_id: zoomCreds.accountId
+            },
+            headers: {
+                Authorization: `Basic ${credentials}`
+            }
+        });
+        zoomTokenCache = {
+            token: response.data.access_token,
+            expiresAt: now + ((response.data.expires_in || 3500) * 1000)
+        };
+        return zoomTokenCache.token;
+    } catch (err) {
+        console.error('Failed to fetch Zoom token:', err.response ? err.response.data : err.message);
+        return null;
+    }
+}
+
+async function fetchZoomParticipants(meetingId) {
+    if (!meetingId) return [];
+    const token = await getZoomAccessToken();
+    if (!token) return [];
+
+    let participants = [];
+    let nextPageToken = null;
+
+    try {
+        do {
+            const response = await axios.get(`https://api.zoom.us/v2/report/meetings/${encodeURIComponent(meetingId)}/participants`, {
+                headers: { Authorization: `Bearer ${token}` },
+                params: {
+                    page_size: 100,
+                    next_page_token: nextPageToken || undefined
+                }
+            });
+            if (response.data && Array.isArray(response.data.participants)) {
+                participants = participants.concat(response.data.participants);
+            }
+            nextPageToken = response.data && response.data.next_page_token ? response.data.next_page_token : null;
+        } while (nextPageToken);
+    } catch (err) {
+        console.error(`Failed to fetch Zoom participants for meeting ${meetingId}:`, err.response ? err.response.data : err.message);
+        return [];
+    }
+
+    return participants.map(p => ({
+        name: p.name || p.user_name || 'Unknown',
+        email: p.user_email || '',
+        phone: p.phone_number || null,
+        joinTime: p.join_time || null,
+        leaveTime: p.leave_time || null,
+        duration: typeof p.duration === 'number' ? p.duration : null
+    }));
+}
 
 // --- MIDDLEWARE ---
 const requireLogin = (req, res, next) => {
@@ -198,8 +275,20 @@ function extractPhone(invitee) {
     return null;
 }
 
+function extractZoomMeetingId(zoomUrl) {
+    if (!zoomUrl) return null;
+    const normalized = zoomUrl.toLowerCase();
+    const regex = /zoom\.us\/[jw]\/(\d+)/i;
+    const match = zoomUrl.match(regex);
+    if (match) return match[1];
+    const digits = normalized.match(/(\d{9,12})/);
+    return digits ? digits[1] : null;
+}
+
 // Shared helper to process events
-async function processEvents(events) {
+async function processEvents(events, options = {}) {
+    const includeAttendance = !!options.includeAttendance && zoomConfigAvailable();
+
     // Step C: Fetch Invitees
     const detailedEvents = await Promise.all(events.map(async (event) => {
         try {
@@ -249,7 +338,7 @@ async function processEvents(events) {
         }
     });
 
-    const collectiveStats = targetNames.map(name => {
+    const collectiveStats = await Promise.all(targetNames.map(async name => {
         const rawList = webinars[name];
         const sessionsMap = {};
 
@@ -266,27 +355,51 @@ async function processEvents(events) {
             sessionsMap[key].attendees.push(...item.invitees);
         });
 
-        const sessions = Object.values(sessionsMap)
+        const sessions = await Promise.all(Object.values(sessionsMap)
             .sort((a, b) => a.date - b.date)
-            .map(s => ({
-                eventName: s.eventName,
-                dateString: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-                timeString: s.date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
-                dayPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }),
-                monthPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' }),
-                isoDate: s.date,
-                attendees: s.attendees,
-                zoomLink: (s.location && s.location.join_url) ? s.location.join_url : null
+            .map(async s => {
+                const zoomLink = (s.location && s.location.join_url) ? s.location.join_url : null;
+                const baseSession = {
+                    eventName: s.eventName,
+                    dateString: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+                    timeString: s.date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+                    dayPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }),
+                    monthPart: s.date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' }),
+                    isoDate: s.date,
+                    attendees: s.attendees,
+                    zoomLink,
+                    zoomMeetingId: null,
+                    attendanceCount: null,
+                    attendanceList: [],
+                    attendanceRate: null
+                };
+
+                if (includeAttendance && zoomLink) {
+                    const meetingId = extractZoomMeetingId(zoomLink);
+                    if (meetingId) {
+                        const zoomAttendees = await fetchZoomParticipants(meetingId);
+                        baseSession.zoomMeetingId = meetingId;
+                        baseSession.attendanceList = zoomAttendees;
+                        baseSession.attendanceCount = zoomAttendees.length;
+                        if (baseSession.attendees.length > 0 && baseSession.attendanceCount !== null) {
+                            baseSession.attendanceRate = Math.round((baseSession.attendanceCount / baseSession.attendees.length) * 100);
+                        }
+                    }
+                }
+
+                return baseSession;
             }));
 
         const totalAttendees = sessions.reduce((sum, s) => sum + s.attendees.length, 0);
+        const totalAttendance = sessions.reduce((sum, s) => sum + (s.attendanceCount || 0), 0);
 
         return {
             collective: name,
             totalUpcoming: totalAttendees,
+            totalAttendance,
             sessions: sessions
         };
-    });
+    }));
 
     return collectiveStats;
 }
@@ -314,6 +427,7 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
         
         // Calculate Global Stats
         const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
+        const totalAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalAttendance || 0), 0);
         
         // Find next immediate session
         let allSessions = [];
@@ -326,6 +440,7 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
             collectives: collectiveStats,
             globalStats: {
                 totalParticipants,
+                totalAttendance,
                 nextSession: nextSession || null,
                 totalSessions: allSessions.length
             }
@@ -356,13 +471,14 @@ app.get('/api/webinars/past', requireLogin, async (req, res) => {
             max_start_time: new Date().toISOString()
         });
 
-        const collectiveStats = await processEvents(eventsRes.data.collection);
+        const collectiveStats = await processEvents(eventsRes.data.collection, { includeAttendance: true });
         
         const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
+        const totalAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalAttendance || 0), 0);
         
         res.json({
             collectives: collectiveStats,
-            globalStats: { totalParticipants, totalSessions: eventsRes.data.collection.length }
+            globalStats: { totalParticipants, totalAttendance, totalSessions: eventsRes.data.collection.length }
         });
 
     } catch (error) {

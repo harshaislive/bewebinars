@@ -256,6 +256,7 @@
         }
         .attendee-name { font-weight: 500; }
         .attendee-email { color: var(--text-muted); font-size: 0.85rem; }
+        .attendee-phone { font-size: 0.9rem; color: var(--text); font-weight: 500; }
 
         /* Tools */
         .toolbar {
@@ -486,8 +487,11 @@
 
                         const attendeesList = s.attendees.map(a => `
                             <div class="attendee">
-                                <span class="attendee-name">${a.name}</span>
-                                <span class="attendee-email">${a.email}</span>
+                                <div>
+                                    <span class="attendee-name">${a.name}</span><br>
+                                    <span class="attendee-email">${a.email}</span>
+                                </div>
+                                <span class="attendee-phone">${a.phone || 'N/A'}</span>
                             </div>
                         `).join('');
 
@@ -564,9 +568,13 @@
                 alert('No attendees to copy.');
                 return;
             }
-            const emails = attendees.map(a => a.email).join(', ');
-            navigator.clipboard.writeText(emails).then(() => {
-                alert(`Copied ${attendees.length} emails to clipboard!`);
+            const emails = attendees.map(a => a.email).filter(Boolean);
+            if (emails.length === 0) {
+                alert('No emails available for this session.');
+                return;
+            }
+            navigator.clipboard.writeText(emails.join(', ')).then(() => {
+                alert(`Copied ${emails.length} emails to clipboard!`);
             });
         }
 
@@ -592,10 +600,10 @@
             }
             
             let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Name,Email,Status\n";
+            csvContent += "Name,Email,Phone,Status\n";
             
             attendees.forEach(row => {
-                csvContent += `"${row.name}","${row.email}","${row.status}"\n`;
+                csvContent += `"${row.name || ''}","${row.email || ''}","${row.phone || ''}","${row.status || ''}"\n`;
             });
 
             const encodedUri = encodeURI(csvContent);
