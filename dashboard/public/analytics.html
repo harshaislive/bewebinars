@@ -301,6 +301,11 @@
                     <div class="meta" id="stat-attendance-meta">Unique attendees captured from Zoom</div>
                 </div>
                 <div class="stat-card">
+                    <h3>Total Zoom Attendees</h3>
+                    <div class="value" id="stat-zoom">-</div>
+                    <div class="meta">Includes guest drop-ins</div>
+                </div>
+                <div class="stat-card">
                     <h3>Average Attendance Rate</h3>
                     <div class="value" id="stat-rate">-</div>
                     <div class="meta" id="stat-rate-meta">Attendance vs registrations</div>
@@ -343,11 +348,12 @@
                                 <th>Attendance</th>
                                 <th>Rate</th>
                                 <th>Guest Drop-ins</th>
+                                <th>Total Zoom</th>
                             </tr>
                         </thead>
                         <tbody id="sessions-table">
                             <tr>
-                                <td colspan="7" class="empty-state">No sessions in this filter.</td>
+                                <td colspan="8" class="empty-state">No sessions in this filter.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -485,11 +491,15 @@
         function updateStats(sessions) {
             const totalSignups = sessions.reduce((sum, s) => sum + s.attendees.length, 0);
             const totalAttendance = sessions.reduce((sum, s) => sum + (s.attendanceCount || 0), 0);
+            const totalZoom = sessions.reduce((sum, s) => sum + (s.totalAttendance || 0), 0);
             const avgRate = sessions.length ? Math.round((sessions.reduce((sum, s) => sum + (s.attendanceRate || 0), 0) / sessions.length)) : 0;
             const sessionsCount = sessions.length;
 
             document.getElementById('stat-signups').innerText = totalSignups.toLocaleString();
             document.getElementById('stat-attendance').innerText = totalAttendance.toLocaleString();
+            if (document.getElementById('stat-zoom')) {
+                document.getElementById('stat-zoom').innerText = totalZoom.toLocaleString();
+            }
             document.getElementById('stat-rate').innerText = `${avgRate}%`;
             document.getElementById('stat-sessions').innerText = sessionsCount;
 
@@ -650,7 +660,7 @@
             if (!sessions.length) {
                 const row = document.createElement('tr');
                 const cell = document.createElement('td');
-                cell.colSpan = 7;
+                cell.colSpan = 8;
                 cell.className = 'empty-state';
                 cell.innerText = 'No sessions in this filter.';
                 row.appendChild(cell);
@@ -671,6 +681,7 @@
                         <td>${s.attendanceCount || 0}</td>
                         <td><span class="rate-badge">${s.attendanceRate || 0}%</span></td>
                         <td>${s.externalAttendance || 0}</td>
+                        <td>${s.totalAttendance || 0}</td>
                     `;
                     tbody.appendChild(row);
                 });
@@ -697,6 +708,7 @@
 
             const avgSignups = Math.round(sessions.reduce((sum, s) => sum + s.attendees.length, 0) / sessions.length);
             const guestEntries = sessions.reduce((sum, s) => sum + (s.externalAttendance || 0), 0);
+            const zoomEntries = sessions.reduce((sum, s) => sum + (s.totalAttendance || 0), 0);
 
             const insightItems = [];
             if (bestSession) {

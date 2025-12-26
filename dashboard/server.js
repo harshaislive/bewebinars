@@ -464,7 +464,8 @@ async function processEvents(events, options = {}) {
                     attendanceCount: null,
                     attendanceList: [],
                     attendanceRate: null,
-                    externalAttendance: 0
+                    externalAttendance: 0,
+                    totalAttendance: null
                 };
 
                 if (includeAttendance && zoomLink) {
@@ -476,6 +477,7 @@ async function processEvents(events, options = {}) {
                         baseSession.zoomMeetingId = meetingId;
                         baseSession.attendanceList = matched;
                         baseSession.attendanceCount = matched.length;
+                        baseSession.totalAttendance = dedupedAttendance.length;
                         baseSession.externalAttendance = external.length;
                         if (baseSession.attendees.length > 0 && baseSession.attendanceCount !== null) {
                             baseSession.attendanceRate = Math.round((baseSession.attendanceCount / baseSession.attendees.length) * 100);
@@ -488,11 +490,13 @@ async function processEvents(events, options = {}) {
 
         const totalAttendees = sessions.reduce((sum, s) => sum + s.attendees.length, 0);
         const totalAttendance = sessions.reduce((sum, s) => sum + (s.attendanceCount || 0), 0);
+        const totalZoomAttendance = sessions.reduce((sum, s) => sum + (s.totalAttendance || 0), 0);
 
         return {
             collective: name,
             totalUpcoming: totalAttendees,
             totalAttendance,
+            totalZoomAttendance,
             sessions: sessions
         };
     }));
@@ -524,6 +528,8 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
         // Calculate Global Stats
         const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
         const totalAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalAttendance || 0), 0);
+        const totalZoomAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalZoomAttendance || 0), 0);
+        const totalZoomAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalZoomAttendance || 0), 0);
         
         // Find next immediate session
         let allSessions = [];
@@ -537,6 +543,7 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
             globalStats: {
                 totalParticipants,
                 totalAttendance,
+                totalZoomAttendance,
                 nextSession: nextSession || null,
                 totalSessions: allSessions.length
             }
@@ -574,7 +581,7 @@ app.get('/api/webinars/past', requireLogin, async (req, res) => {
         
         res.json({
             collectives: collectiveStats,
-            globalStats: { totalParticipants, totalAttendance, totalSessions: eventsRes.data.collection.length }
+            globalStats: { totalParticipants, totalAttendance, totalZoomAttendance, totalSessions: eventsRes.data.collection.length }
         });
 
     } catch (error) {

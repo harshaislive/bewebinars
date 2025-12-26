@@ -343,6 +343,13 @@
                     </div>
                 </div>
                 <div class="stat-card">
+                    <div class="stat-icon"><i class="fa-solid fa-users-viewfinder"></i></div>
+                    <div class="stat-info">
+                        <div>Total Zoom Attendees</div>
+                        <div class="stat-value" id="total-zoom">-</div>
+                    </div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-icon"><i class="fa-solid fa-calendar-check"></i></div>
                     <div class="stat-info">
                         <div>Past Sessions</div>
@@ -401,6 +408,9 @@
             if (document.getElementById('total-attendance')) {
                 document.getElementById('total-attendance').innerText = stats.totalAttendance ?? '-';
             }
+            if (document.getElementById('total-zoom')) {
+                document.getElementById('total-zoom').innerText = stats.totalZoomAttendance ?? '-';
+            }
             document.getElementById('total-sessions').innerText = stats.totalSessions;
         }
 
@@ -453,10 +463,13 @@
                             <div class="attendees-list">
                                 <div class="attendance-summary">
                                     <span><strong>${s.attendees.length}</strong> Registered</span>
-                                    <span>
-                                        <strong>${s.attendanceCount ?? 0}</strong> Attended
+                                   <span>
+                                        <strong>${s.attendanceCount ?? 0}</strong> Registered Attended
                                         ${s.attendanceRate !== null ? `<span class="rate-badge">${s.attendanceRate}%</span>` : ''}
                                         ${s.externalAttendance ? `<span class="external-chip"><i class="fa-solid fa-user-plus"></i> +${s.externalAttendance} Guests</span>` : ''}
+                                        ${s.totalAttendance && s.totalAttendance !== (s.attendanceCount ?? 0)
+                                            ? `<div style="margin-top:4px;font-size:0.85rem;color:#4b5563;">Zoom total: ${s.totalAttendance}</div>`
+                                            : ''}
                                     </span>
                                 </div>
                                 <div class="toolbar">
@@ -515,7 +528,10 @@
                 card.innerHTML = `
                     <div class="card-header">
                         <h2>${item.collective}</h2>
-                        <span class="badge">${item.totalAttendance || 0}/${item.totalUpcoming} Attended (${item.totalUpcoming ? Math.round(((item.totalAttendance || 0) / item.totalUpcoming) * 100) : 0}%)</span>
+                        <span class="badge">
+                            ${item.totalAttendance || 0}/${item.totalUpcoming} Registered (${item.totalUpcoming ? Math.round(((item.totalAttendance || 0) / item.totalUpcoming) * 100) : 0}%)
+                            ${item.totalZoomAttendance && item.totalZoomAttendance !== (item.totalAttendance || 0) ? ` · Zoom ${item.totalZoomAttendance}` : ''}
+                        </span>
                     </div>
                     <div class="sessions-container">
                         ${sessionsHtml}
