@@ -378,6 +378,9 @@
                                     <button class="tool-btn" onclick='copyEmailsForSession(${JSON.stringify(s.attendees)})'>
                                         <i class="fa-regular fa-copy"></i> Copy Emails
                                     </button>
+                                    <button class="tool-btn" onclick='copyPhonesForSession(${JSON.stringify(s.attendees)})'>
+                                        <i class="fa-solid fa-phone"></i> Copy Phones
+                                    </button>
                                 </div>
                                 ${attendeesList || '<div style="padding:15px; text-align:center; color:#9ca3af; font-size:0.9rem;">No attendees.</div>'}
                             </div>
@@ -417,6 +420,21 @@
             const emails = attendees.map(a => a.email).join(', ');
             navigator.clipboard.writeText(emails).then(() => {
                 alert(`Copied ${attendees.length} emails to clipboard!`);
+            });
+        }
+
+        function copyPhonesForSession(attendees) {
+            if (!attendees || attendees.length === 0) {
+                alert('No attendees to copy.');
+                return;
+            }
+            const phones = attendees.map(a => a.phone).filter(Boolean);
+            if (phones.length === 0) {
+                alert('No phone numbers available for this session.');
+                return;
+            }
+            navigator.clipboard.writeText(phones.join(', ')).then(() => {
+                alert(`Copied ${phones.length} phone numbers to clipboard!`);
             });
         }
 

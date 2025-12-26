@@ -455,6 +455,7 @@
                     <div class="hero-actions">
                         ${session.zoomLink ? `<a href="${session.zoomLink}" target="_blank" class="btn-hero"><i class="fa-solid fa-video"></i> Start Zoom</a>` : '<div class="btn-hero secondary" style="cursor:not-allowed">No Zoom Link</div>'}
                         <button onclick='copyEmailsForSession(${JSON.stringify(session.attendees)})' class="btn-hero secondary"><i class="fa-regular fa-copy"></i> Copy Emails</button>
+                        <button onclick='copyPhonesForSession(${JSON.stringify(session.attendees)})' class="btn-hero secondary"><i class="fa-solid fa-phone"></i> Copy Phones</button>
                     </div>
                 </div>
             `;
@@ -524,6 +525,9 @@
                                     <button class="tool-btn" onclick='copyEmailsForSession(${JSON.stringify(s.attendees)})'>
                                         <i class="fa-regular fa-copy"></i> Copy Emails
                                     </button>
+                                    <button class="tool-btn" onclick='copyPhonesForSession(${JSON.stringify(s.attendees)})'>
+                                        <i class="fa-solid fa-phone"></i> Copy Phones
+                                    </button>
                                 </div>
                                 ${attendeesList || '<div style="padding:15px; text-align:center; color:#9ca3af; font-size:0.9rem;">No registrations yet.</div>'}
                             </div>
@@ -563,6 +567,21 @@
             const emails = attendees.map(a => a.email).join(', ');
             navigator.clipboard.writeText(emails).then(() => {
                 alert(`Copied ${attendees.length} emails to clipboard!`);
+            });
+        }
+
+        function copyPhonesForSession(attendees) {
+            if (!attendees || attendees.length === 0) {
+                alert('No attendees to copy.');
+                return;
+            }
+            const phones = attendees.map(a => a.phone).filter(Boolean);
+            if (phones.length === 0) {
+                alert('No phone numbers available for this session.');
+                return;
+            }
+            navigator.clipboard.writeText(phones.join(', ')).then(() => {
+                alert(`Copied ${phones.length} phone numbers to clipboard!`);
             });
         }
 

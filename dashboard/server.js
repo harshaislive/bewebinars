@@ -185,6 +185,19 @@ async function makeCalendlyRequest(url, params = {}) {
     }
 }
 
+function extractPhone(invitee) {
+    if (!invitee) return null;
+    if (invitee.phone_number) return invitee.phone_number;
+    if (invitee.text_reminder_number) return invitee.text_reminder_number;
+    if (Array.isArray(invitee.questions_and_answers)) {
+        const phoneAnswer = invitee.questions_and_answers.find(entry => {
+            return entry.question && entry.question.toLowerCase().includes('phone');
+        });
+        if (phoneAnswer && phoneAnswer.answer) return phoneAnswer.answer;
+    }
+    return null;
+}
+
 // Shared helper to process events
 async function processEvents(events) {
     // Step C: Fetch Invitees
@@ -200,7 +213,8 @@ async function processEvents(events) {
                 const invitees = inviteesRes.data.collection.map(inv => ({
                     name: inv.name,
                     email: inv.email,
-                    status: inv.status
+                    status: inv.status,
+                    phone: extractPhone(inv)
                 }));
                 allInvitees = allInvitees.concat(invitees);
 
