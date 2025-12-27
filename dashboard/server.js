@@ -92,20 +92,65 @@ async function getZoomAccessToken() {
     }
 }
 
-async function fetchZoomParticipants(meetingId) {
+async function getPastMeetingUUID(meetingId, targetDate) {
+    if (!meetingId || !targetDate) return null;
+    const token = await getZoomAccessToken();
+    if (!token) return null;
+
+    try {
+        const response = await axios.get(`https://api.zoom.us/v2/past_meetings/${meetingId}/instances`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const instances = response.data.meetings || [];
+        const targetTime = new Date(targetDate).getTime();
+
+        // Find instance starting within 2 hours of target date
+        const matched = instances.find(inst => {
+            const instTime = new Date(inst.start_time).getTime();
+            return Math.abs(instTime - targetTime) < 2 * 60 * 60 * 1000;
+        });
+
+        return matched ? matched.uuid : null;
+    } catch (err) {
+        // 404 means no past instances found (maybe it's a single meeting or new)
+        return null;
+    }
+}
+
+async function fetchZoomParticipants(meetingId, targetDate = null) {
     if (!meetingId) return [];
     const token = await getZoomAccessToken();
     if (!token) return [];
+
+    let targetId = meetingId;
+    
+    // If a date is provided, try to find the specific instance UUID
+    if (targetDate) {
+        const uuid = await getPastMeetingUUID(meetingId, targetDate);
+        if (uuid) {
+            // UUIDs starting with / or containing + must be double encoded
+            targetId = encodeURIComponent(encodeURIComponent(uuid));
+        } else {
+             // If we can't find a past instance, and the date is very old (> 24h), 
+             // querying the numeric ID will return the WRONG data (latest meeting).
+             // Better to return empty than wrong data.
+             const age = Date.now() - new Date(targetDate).getTime();
+             if (age > 24 * 60 * 60 * 1000) {
+                 return [];
+             }
+        }
+    }
 
     let participants = [];
     let nextPageToken = null;
 
     try {
         do {
-            const response = await axios.get(`https://api.zoom.us/v2/report/meetings/${encodeURIComponent(meetingId)}/participants`, {
+            const response = await axios.get(`https://api.zoom.us/v2/report/meetings/${targetId}/participants`, {
                 headers: { Authorization: `Bearer ${token}` },
                 params: {
-                    page_size: 100,
+                    page_size: 300,
                     next_page_token: nextPageToken || undefined
                 }
             });
@@ -115,230 +160,45 @@ async function fetchZoomParticipants(meetingId) {
             nextPageToken = response.data && response.data.next_page_token ? response.data.next_page_token : null;
         } while (nextPageToken);
     } catch (err) {
-        console.error(`Failed to fetch Zoom participants for meeting ${meetingId}:`, err.response ? err.response.data : err.message);
+        console.error(`Failed to fetch Zoom participants for ${targetId}:`, err.response ? err.response.data : err.message);
         return [];
     }
 
     return participants.map(p => ({
         name: p.name || p.user_name || 'Unknown',
         email: p.user_email || '',
-        phone: p.phone_number || null,
         joinTime: p.join_time || null,
-        leaveTime: p.leave_time || null,
-        duration: typeof p.duration === 'number' ? p.duration : null
+        duration: typeof p.duration === 'number' ? p.duration : 0
     }));
 }
 
-// --- MIDDLEWARE ---
-const requireLogin = (req, res, next) => {
-    if (req.session.isLoggedIn) {
-        next();
-    } else {
-        res.status(401).json({ error: 'Unauthorized' });
-    }
-};
-
-// --- APP AUTH ROUTES ---
-
-// Login Endpoint
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    
-    if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
-        req.session.isLoggedIn = true;
-        res.json({ success: true });
-    } else {
-        res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-});
-
-app.get('/api/auth-status', (req, res) => {
-    res.json({ 
-        isLoggedIn: !!req.session.isLoggedIn,
-        isCalendlyConnected: !!calendlyTokens.accessToken
-    });
-});
-
-app.post('/api/logout', (req, res) => {
-    req.session.destroy();
-    res.json({ success: true });
-});
-
-
-// --- CALENDLY OAUTH ROUTES ---
-
-// 1. Redirect user to Calendly to authorize (protected)
-app.get('/connect-calendly', (req, res) => {
-    if (!req.session.isLoggedIn) return res.redirect('/');
-
-    const clientId = process.env.CALENDLY_CLIENT_ID;
-    const redirectUri = process.env.CALENDLY_REDIRECT_URI;
-    
-    if (!clientId) return res.send('Missing CALENDLY_CLIENT_ID in .env file');
-
-    const authUrl = `https://auth.calendly.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}`;
-    res.redirect(authUrl);
-});
-
-// 2. Handle the callback from Calendly
-app.get('/oauth/callback', async (req, res) => {
-    // Note: If session is lost during redirect (rare locally), this might fail check.
-    // For simplicity, we process the code then redirect to home.
-    
-    const { code } = req.query;
-    const clientId = process.env.CALENDLY_CLIENT_ID;
-    const clientSecret = process.env.CALENDLY_CLIENT_SECRET;
-    const redirectUri = process.env.CALENDLY_REDIRECT_URI;
-
-    try {
-        const response = await axios.post('https://auth.calendly.com/oauth/token', null, {
-            params: {
-                grant_type: 'authorization_code',
-                client_id: clientId,
-                client_secret: clientSecret,
-                code: code,
-                redirect_uri: redirectUri
-            }
-        });
-
-        calendlyTokens.accessToken = response.data.access_token;
-        calendlyTokens.refreshToken = response.data.refresh_token;
-        saveTokens(); // Save to disk
-
-        res.redirect('/');
-    } catch (error) {
-        console.error('Error exchanging token:', error.response ? error.response.data : error.message);
-        res.redirect('/?error=calendly_auth_failed');
-    }
-});
-
-
-// --- DATA API ---
-
-async function refreshAccessToken() {
-    try {
-        console.log('Refreshing Access Token...');
-        const response = await axios.post('https://auth.calendly.com/oauth/token', null, {
-            params: {
-                grant_type: 'refresh_token',
-                client_id: process.env.CALENDLY_CLIENT_ID,
-                client_secret: process.env.CALENDLY_CLIENT_SECRET,
-                refresh_token: calendlyTokens.refreshToken
-            }
-        });
-
-        calendlyTokens.accessToken = response.data.access_token;
-        calendlyTokens.refreshToken = response.data.refresh_token; // Calendly rotates refresh tokens too
-        saveTokens();
-        console.log('Token Refreshed Successfully.');
-        return calendlyTokens.accessToken;
-    } catch (error) {
-        console.error('Failed to refresh token:', error.response ? error.response.data : error.message);
-        return null;
-    }
-}
-
-// Helper to make authenticated requests with auto-retry
-async function makeCalendlyRequest(url, params = {}) {
-    if (!calendlyTokens.accessToken) throw new Error('No token');
-
-    try {
-        return await axios.get(url, {
-            headers: { Authorization: `Bearer ${calendlyTokens.accessToken}` },
-            params: params
-        });
-    } catch (error) {
-        // If 401, try to refresh and retry ONCE
-        if (error.response && error.response.status === 401) {
-            const newToken = await refreshAccessToken();
-            if (newToken) {
-                return await axios.get(url, {
-                    headers: { Authorization: `Bearer ${newToken}` },
-                    params: params
-                });
-            }
-        }
-        throw error; // Re-throw if not 401 or refresh failed
-    }
-}
-
-function extractPhone(invitee) {
-    if (!invitee) return null;
-    if (invitee.phone_number) return invitee.phone_number;
-    if (invitee.text_reminder_number) return invitee.text_reminder_number;
-    if (Array.isArray(invitee.questions_and_answers)) {
-        const phoneAnswer = invitee.questions_and_answers.find(entry => {
-            return entry.question && entry.question.toLowerCase().includes('phone');
-        });
-        if (phoneAnswer && phoneAnswer.answer) return phoneAnswer.answer;
-    }
-    return null;
-}
-
-function extractZoomMeetingId(zoomUrl) {
-    if (!zoomUrl) return null;
-    const normalized = zoomUrl.toLowerCase();
-    const regex = /zoom\.us\/[jw]\/(\d+)/i;
-    const match = zoomUrl.match(regex);
-    if (match) return match[1];
-    const digits = normalized.match(/(\d{9,12})/);
-    return digits ? digits[1] : null;
-}
-
-function parseDateSafe(value) {
-    if (!value) return null;
-    const d = value instanceof Date ? value : new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function normalizeEmail(value) {
-    return (value || '').toLowerCase().trim();
-}
-
-function normalizeName(value) {
-    return (value || '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function filterAndDedupAttendance(attendees, sessionStart, sessionEnd) {
+function filterAndDedupAttendance(attendees) {
     if (!Array.isArray(attendees) || attendees.length === 0) return [];
-    const start = parseDateSafe(sessionStart);
-    const end = parseDateSafe(sessionEnd);
-    const fallbackEnd = end || (start ? new Date(start.getTime() + (2 * 60 * 60 * 1000)) : null);
-    const windowStart = start ? new Date(start.getTime() - (2 * 60 * 60 * 1000)) : null; // allow early joins
-    const windowEnd = fallbackEnd ? new Date(fallbackEnd.getTime() + (60 * 60 * 1000)) : null; // allow late departures
-
-    const filtered = attendees.filter(entry => {
-        if (!windowStart || !windowEnd) return true;
-        const join = parseDateSafe(entry.joinTime);
-        if (!join) return true;
-        return join >= windowStart && join <= windowEnd;
-    });
 
     const deduped = new Map();
-    filtered.forEach(entry => {
+    
+    attendees.forEach(entry => {
+        // Key by Email if available, else Name
         const key = entry.email 
             ? entry.email.toLowerCase().trim()
-            : `${(entry.name || 'guest').toLowerCase()}-${entry.joinTime || ''}`;
+            : `name:${(entry.name || 'guest').toLowerCase()}`;
+            
+        // Ignore empty emails if we want strict matching, 
+        // but often Zoom users don't have emails if not logged in.
+        // We keep them but they might not match Registrants.
+        
         const existing = deduped.get(key);
         if (!existing) {
             deduped.set(key, entry);
-            return;
-        }
-        const currentDuration = typeof existing.duration === 'number' ? existing.duration : 0;
-        const newDuration = typeof entry.duration === 'number' ? entry.duration : 0;
-        if (newDuration > currentDuration) {
-            deduped.set(key, entry);
+        } else {
+            // Keep the one with longer duration
+            if (entry.duration > existing.duration) {
+                deduped.set(key, entry);
+            }
         }
     });
 
-    return Array.from(deduped.values()).sort((a, b) => {
-        const aTime = parseDateSafe(a.joinTime);
-        const bTime = parseDateSafe(b.joinTime);
-        if (!aTime && !bTime) return 0;
-        if (!aTime) return 1;
-        if (!bTime) return -1;
-        return aTime - bTime;
-    });
+    return Array.from(deduped.values());
 }
 
 function matchAttendanceToRegistrants(attendanceList, registrants) {
@@ -471,8 +331,8 @@ async function processEvents(events, options = {}) {
                 if (includeAttendance && zoomLink) {
                     const meetingId = extractZoomMeetingId(zoomLink);
                     if (meetingId) {
-                        const rawAttendance = await fetchZoomParticipants(meetingId);
-                        const dedupedAttendance = filterAndDedupAttendance(rawAttendance, s.date, s.endDate);
+                        const rawAttendance = await fetchZoomParticipants(meetingId, s.date);
+                        const dedupedAttendance = filterAndDedupAttendance(rawAttendance);
                         const { matched, external } = matchAttendanceToRegistrants(dedupedAttendance, s.attendees);
                         baseSession.zoomMeetingId = meetingId;
                         baseSession.attendanceList = matched;
@@ -588,6 +448,123 @@ app.get('/api/webinars/past', requireLogin, async (req, res) => {
         console.error('Error fetching past data:', error.message);
         if (error.response && error.response.status === 401) return res.status(401).json({ error: 'Authentication expired' });
         res.status(500).json({ error: 'Failed to fetch data' });
+    }
+});
+
+// --- PIPEDRIVE INTEGRATION ---
+
+const PD_API_TOKEN = process.env.PIPEDRIVE_API_TOKEN;
+const PD_DOMAIN = process.env.PIPEDRIVE_COMPANY_DOMAIN || 'app';
+
+async function makePipedriveRequest(method, endpoint, data = {}, params = {}) {
+    if (!PD_API_TOKEN) throw new Error('Missing PIPEDRIVE_API_TOKEN in .env');
+    
+    params.api_token = PD_API_TOKEN;
+    
+    try {
+        const url = `https://api.pipedrive.com/v1${endpoint}`;
+        const config = { method, url, params, data };
+        const response = await axios(config);
+        return response.data;
+    } catch (error) {
+        console.error(`Pipedrive Error [${endpoint}]:`, error.response ? error.response.data : error.message);
+        throw error;
+    }
+}
+
+app.get('/api/pipedrive/users', requireLogin, async (req, res) => {
+    try {
+        const result = await makePipedriveRequest('GET', '/users');
+        if (result.success) {
+            const activeUsers = result.data.filter(u => u.active_flag).map(u => ({
+                id: u.id,
+                name: u.name,
+                email: u.email
+            }));
+            res.json({ success: true, data: activeUsers });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to fetch users' });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post('/api/pipedrive/find-deal', requireLogin, async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email required' });
+
+    try {
+        // 1. Search Person
+        const searchRes = await makePipedriveRequest('GET', '/persons/search', {}, { 
+            term: email, 
+            exact_match: true, 
+            fields: 'email' 
+        });
+
+        const items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+        if (items.length === 0) {
+            return res.json({ success: true, deal: null, message: 'Person not found' });
+        }
+
+        const personId = items[0].item.id;
+
+        // 2. Get Deals (Prefer Open)
+        const dealsRes = await makePipedriveRequest('GET', `/persons/${personId}/deals`, {}, {
+            status: 'open',
+            sort: 'add_time DESC',
+            limit: 1
+        });
+
+        let deal = null;
+        if (dealsRes.data && dealsRes.data.length > 0) {
+            deal = dealsRes.data[0];
+        } else {
+            // Fallback to any status
+             const allDealsRes = await makePipedriveRequest('GET', `/persons/${personId}/deals`, {}, {
+                status: 'all_not_deleted',
+                sort: 'add_time DESC',
+                limit: 1
+            });
+            if (allDealsRes.data && allDealsRes.data.length > 0) {
+                deal = allDealsRes.data[0];
+            }
+        }
+
+        if (deal) {
+            res.json({ 
+                success: true, 
+                company_domain: PD_DOMAIN,
+                deal: {
+                    id: deal.id,
+                    title: deal.title,
+                    status: deal.status,
+                    owner_name: deal.owner_name,
+                    user_id: deal.user_id 
+                }
+            });
+        } else {
+            res.json({ success: true, deal: null, message: 'Person found but no deals' });
+        }
+
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post('/api/pipedrive/update-deal', requireLogin, async (req, res) => {
+    const { dealId, newOwnerId } = req.body;
+    if (!dealId || !newOwnerId) return res.status(400).json({ success: false, message: 'Missing fields' });
+
+    try {
+        const result = await makePipedriveRequest('PUT', `/deals/${dealId}`, { user_id: newOwnerId });
+        if (result.success) {
+            res.json({ success: true });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to update' });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
