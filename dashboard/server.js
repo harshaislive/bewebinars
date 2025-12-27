@@ -668,6 +668,8 @@ app.post('/api/pipedrive/find-deal', requireLogin, async (req, res) => {
     if (!email) return res.status(400).json({ success: false, message: 'Email required' });
 
     try {
+        let personId = null;
+
         // 1. Search Person by Email
         let searchRes = await makePipedriveRequest('GET', '/persons/search', {}, { 
             term: email, 
@@ -677,9 +679,9 @@ app.post('/api/pipedrive/find-deal', requireLogin, async (req, res) => {
 
         let items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
 
-        // 2. Fallback: Search by Name if not found by Email
+        // 2. Fallback: Search Person by Name
         if (items.length === 0 && name) {
-            console.log(`PD: Email not found, trying name search: ${name}`);
+            console.log(`PD: Email not found, trying person name search: ${name}`);
              searchRes = await makePipedriveRequest('GET', '/persons/search', {}, { 
                 term: name,
                 fields: 'name' 
@@ -687,13 +689,31 @@ app.post('/api/pipedrive/find-deal', requireLogin, async (req, res) => {
             items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
         }
 
-        if (items.length === 0) {
-            return res.json({ success: true, deal: null, message: 'Person not found' });
+        if (items.length > 0) {
+            personId = items[0].item.id;
+        } 
+        // 3. Fallback: Search Deal by Name (if Person not found)
+        else if (name) {
+            console.log(`PD: Person not found, trying deal name search: ${name}`);
+            searchRes = await makePipedriveRequest('GET', '/deals/search', {}, {
+                term: name,
+                fields: 'title' // Searches title (which often contains person name) and person_name
+            });
+             items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+             if (items.length > 0) {
+                 // Check if the found deal has a person associated
+                 const foundDeal = items[0].item;
+                 if (foundDeal.person && foundDeal.person.id) {
+                     personId = foundDeal.person.id;
+                 }
+             }
         }
 
-        const personId = items[0].item.id; // Pick first match
+        if (!personId) {
+            return res.json({ success: true, deal: null, message: 'Person/Deal not found' });
+        }
 
-        // 3. Get Deals (Prefer Open)
+        // 4. Get Deals for Person (Prefer Open)
         const dealsRes = await makePipedriveRequest('GET', `/persons/${personId}/deals`, {}, {
             status: 'open',
             sort: 'add_time DESC',
