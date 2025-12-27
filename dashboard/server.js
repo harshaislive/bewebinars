@@ -529,7 +529,6 @@ app.get('/api/webinars', requireLogin, async (req, res) => {
         const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
         const totalAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalAttendance || 0), 0);
         const totalZoomAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalZoomAttendance || 0), 0);
-        const totalZoomAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalZoomAttendance || 0), 0);
         
         // Find next immediate session
         let allSessions = [];
@@ -578,6 +577,7 @@ app.get('/api/webinars/past', requireLogin, async (req, res) => {
         
         const totalParticipants = collectiveStats.reduce((sum, c) => sum + c.totalUpcoming, 0);
         const totalAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalAttendance || 0), 0);
+        const totalZoomAttendance = collectiveStats.reduce((sum, c) => sum + (c.totalZoomAttendance || 0), 0);
         
         res.json({
             collectives: collectiveStats,
