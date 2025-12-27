@@ -201,6 +201,15 @@ function filterAndDedupAttendance(attendees) {
     return Array.from(deduped.values());
 }
 
+// --- MIDDLEWARE ---
+const requireLogin = (req, res, next) => {
+    if (req.session.isLoggedIn) {
+        next();
+    } else {
+        res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
 function matchAttendanceToRegistrants(attendanceList, registrants) {
     if (!Array.isArray(attendanceList) || attendanceList.length === 0) {
         return { matched: [], external: [] };
