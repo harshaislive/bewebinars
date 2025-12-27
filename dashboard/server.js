@@ -175,6 +175,167 @@ async function fetchZoomParticipants(meetingId, targetDate = null) {
     }));
 }
 
+// --- APP AUTH ROUTES ---
+
+// Login Endpoint
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    
+    if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
+        req.session.isLoggedIn = true;
+        res.json({ success: true });
+    } else {
+        res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+});
+
+app.get('/api/auth-status', (req, res) => {
+    res.json({ 
+        isLoggedIn: !!req.session.isLoggedIn,
+        isCalendlyConnected: !!calendlyTokens.accessToken
+    });
+});
+
+app.post('/api/logout', (req, res) => {
+    req.session.destroy();
+    res.json({ success: true });
+});
+
+
+// --- CALENDLY OAUTH ROUTES ---
+
+// 1. Redirect user to Calendly to authorize (protected)
+app.get('/connect-calendly', (req, res) => {
+    if (!req.session.isLoggedIn) return res.redirect('/');
+
+    const clientId = process.env.CALENDLY_CLIENT_ID;
+    const redirectUri = process.env.CALENDLY_REDIRECT_URI;
+    
+    if (!clientId) return res.send('Missing CALENDLY_CLIENT_ID in .env file');
+
+    const authUrl = `https://auth.calendly.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}`;
+    res.redirect(authUrl);
+});
+
+// 2. Handle the callback from Calendly
+app.get('/oauth/callback', async (req, res) => {
+    // Note: If session is lost during redirect (rare locally), this might fail check.
+    // For simplicity, we process the code then redirect to home.
+    
+    const { code } = req.query;
+    const clientId = process.env.CALENDLY_CLIENT_ID;
+    const clientSecret = process.env.CALENDLY_CLIENT_SECRET;
+    const redirectUri = process.env.CALENDLY_REDIRECT_URI;
+
+    try {
+        const response = await axios.post('https://auth.calendly.com/oauth/token', null, {
+            params: {
+                grant_type: 'authorization_code',
+                client_id: clientId,
+                client_secret: clientSecret,
+                code: code,
+                redirect_uri: redirectUri
+            }
+        });
+
+        calendlyTokens.accessToken = response.data.access_token;
+        calendlyTokens.refreshToken = response.data.refresh_token;
+        saveTokens(); // Save to disk
+
+        res.redirect('/');
+    } catch (error) {
+        console.error('Error exchanging token:', error.response ? error.response.data : error.message);
+        res.redirect('/?error=calendly_auth_failed');
+    }
+});
+
+
+// --- DATA API ---
+
+async function refreshAccessToken() {
+    try {
+        console.log('Refreshing Access Token...');
+        const response = await axios.post('https://auth.calendly.com/oauth/token', null, {
+            params: {
+                grant_type: 'refresh_token',
+                client_id: process.env.CALENDLY_CLIENT_ID,
+                client_secret: process.env.CALENDLY_CLIENT_SECRET,
+                refresh_token: calendlyTokens.refreshToken
+            }
+        });
+
+        calendlyTokens.accessToken = response.data.access_token;
+        calendlyTokens.refreshToken = response.data.refresh_token; // Calendly rotates refresh tokens too
+        saveTokens();
+        console.log('Token Refreshed Successfully.');
+        return calendlyTokens.accessToken;
+    } catch (error) {
+        console.error('Failed to refresh token:', error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+// Helper to make authenticated requests with auto-retry
+async function makeCalendlyRequest(url, params = {}) {
+    if (!calendlyTokens.accessToken) throw new Error('No token');
+
+    try {
+        return await axios.get(url, {
+            headers: { Authorization: `Bearer ${calendlyTokens.accessToken}` },
+            params: params
+        });
+    } catch (error) {
+        // If 401, try to refresh and retry ONCE
+        if (error.response && error.response.status === 401) {
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+                return await axios.get(url, {
+                    headers: { Authorization: `Bearer ${newToken}` },
+                    params: params
+                });
+            }
+        }
+        throw error; // Re-throw if not 401 or refresh failed
+    }
+}
+
+function extractPhone(invitee) {
+    if (!invitee) return null;
+    if (invitee.phone_number) return invitee.phone_number;
+    if (invitee.text_reminder_number) return invitee.text_reminder_number;
+    if (Array.isArray(invitee.questions_and_answers)) {
+        const phoneAnswer = invitee.questions_and_answers.find(entry => {
+            return entry.question && entry.question.toLowerCase().includes('phone');
+        });
+        if (phoneAnswer && phoneAnswer.answer) return phoneAnswer.answer;
+    }
+    return null;
+}
+
+function extractZoomMeetingId(zoomUrl) {
+    if (!zoomUrl) return null;
+    const normalized = zoomUrl.toLowerCase();
+    const regex = /zoom\.us\/[jw]\/(\d+)/i;
+    const match = zoomUrl.match(regex);
+    if (match) return match[1];
+    const digits = normalized.match(/(\d{9,12})/);
+    return digits ? digits[1] : null;
+}
+
+function parseDateSafe(value) {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeEmail(value) {
+    return (value || '').toLowerCase().trim();
+}
+
+function normalizeName(value) {
+    return (value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function filterAndDedupAttendance(attendees) {
     if (!Array.isArray(attendees) || attendees.length === 0) return [];
 
