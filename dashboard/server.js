@@ -17,9 +17,12 @@ const zoomCreds = {
 let zoomTokenCache = { token: null, expiresAt: 0 };
 
 // Middleware
+app.set('trust proxy', 1); // Trust first proxy (needed for secure cookies behind proxies like Coolify/Traefik)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secret',

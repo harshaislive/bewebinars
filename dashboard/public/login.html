@@ -206,18 +206,25 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-                const data = await res.json();
                 
-                if (data.success) {
-                    window.location.href = '/dashboard.html';
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const data = await res.json();
+                    if (data.success) {
+                        window.location.href = '/dashboard.html';
+                    } else {
+                        errorDiv.innerText = data.message || 'Invalid credentials';
+                        errorDiv.style.display = 'block';
+                        btn.innerHTML = 'Sign In';
+                        btn.disabled = false;
+                    }
                 } else {
-                    errorDiv.style.display = 'block';
-                    btn.innerHTML = 'Sign In';
-                    btn.disabled = false;
+                    // Non-JSON response (e.g. 404 HTML or 500)
+                    throw new Error(`Server Error: ${res.status} ${res.statusText}`);
                 }
             } catch (err) {
                 console.error(err);
-                errorDiv.innerText = 'Connection failed. Please try again.';
+                errorDiv.innerText = `Login Failed: ${err.message}`;
                 errorDiv.style.display = 'block';
                 btn.innerHTML = 'Sign In';
                 btn.disabled = false;
