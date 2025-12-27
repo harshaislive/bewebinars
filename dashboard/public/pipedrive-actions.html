@@ -182,13 +182,44 @@
         const rows = document.querySelectorAll('#attendeesTableBody tr');
         rows.forEach(row => {
             const email = row.dataset.email;
-            if (email) checkPipedriveForEmail(email, row);
+            if (email) {
+                row.querySelector('.pd-status').innerHTML = '<span class="spinner-border spinner-border-sm text-secondary"></span> Queued...';
+                addToQueue(email, row);
+            }
         });
     });
+
+    const checkQueue = [];
+    let isProcessingQueue = false;
+
+    function addToQueue(email, row) {
+        checkQueue.push({ email, row });
+        processQueue();
+    }
+
+    async function processQueue() {
+        if (isProcessingQueue || checkQueue.length === 0) return;
+        isProcessingQueue = true;
+
+        const { email, row } = checkQueue.shift();
+        
+        try {
+            await checkPipedriveForEmail(email, row);
+        } catch (e) {
+            console.error(e);
+        }
+
+        // Add a small delay to respect rate limits (e.g., 300ms)
+        setTimeout(() => {
+            isProcessingQueue = false;
+            processQueue();
+        }, 300);
+    }
 
     function renderAttendees(session) {
         const tbody = document.getElementById('attendeesTableBody');
         tbody.innerHTML = '';
+        checkQueue.length = 0; // Clear existing queue
         
         // Use registrants (attendees array) as base
         // Mark if they are in attendanceList
@@ -204,7 +235,7 @@
                 <td>${p.name || 'Unknown'}</td>
                 <td>${p.email || 'No Email'}</td>
                 <td>${attended ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-light text-dark">No</span>'}</td>
-                <td class="pd-status"><span class="spinner-border spinner-border-sm text-secondary"></span> Checking...</td>
+                <td class="pd-status"><span class="spinner-border spinner-border-sm text-secondary"></span> Queued...</td>
                 <td class="pd-owner">-</td>
                 <td>
                     <select class="form-select form-select-sm owner-select" disabled>
@@ -217,9 +248,9 @@
             `;
             tbody.appendChild(tr);
 
-            // Trigger PD Check
+            // Trigger PD Check via Queue
             if (p.email) {
-                checkPipedriveForEmail(p.email, tr);
+                addToQueue(p.email, tr);
             } else {
                 tr.querySelector('.pd-status').innerHTML = '<span class="text-muted">No Email</span>';
             }
