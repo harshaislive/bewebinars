@@ -664,25 +664,36 @@ app.get('/api/pipedrive/users', requireLogin, async (req, res) => {
 });
 
 app.post('/api/pipedrive/find-deal', requireLogin, async (req, res) => {
-    const { email } = req.body;
+    const { email, name } = req.body;
     if (!email) return res.status(400).json({ success: false, message: 'Email required' });
 
     try {
-        // 1. Search Person
-        const searchRes = await makePipedriveRequest('GET', '/persons/search', {}, { 
+        // 1. Search Person by Email
+        let searchRes = await makePipedriveRequest('GET', '/persons/search', {}, { 
             term: email, 
             exact_match: true, 
             fields: 'email' 
         });
 
-        const items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+        let items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+
+        // 2. Fallback: Search by Name if not found by Email
+        if (items.length === 0 && name) {
+            console.log(`PD: Email not found, trying name search: ${name}`);
+             searchRes = await makePipedriveRequest('GET', '/persons/search', {}, { 
+                term: name,
+                fields: 'name' 
+            });
+            items = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+        }
+
         if (items.length === 0) {
             return res.json({ success: true, deal: null, message: 'Person not found' });
         }
 
-        const personId = items[0].item.id;
+        const personId = items[0].item.id; // Pick first match
 
-        // 2. Get Deals (Prefer Open)
+        // 3. Get Deals (Prefer Open)
         const dealsRes = await makePipedriveRequest('GET', `/persons/${personId}/deals`, {}, {
             status: 'open',
             sort: 'add_time DESC',

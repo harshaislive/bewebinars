@@ -230,11 +230,15 @@
     }
 
     async function checkPipedriveForEmail(email, row) {
+        // Retrieve name from the first cell or dataset if stored
+        const nameCell = row.cells[0];
+        const name = nameCell ? nameCell.textContent : null;
+
         try {
             const res = await fetch('/api/pipedrive/find-deal', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
+                body: JSON.stringify({ email, name })
             });
             const data = await res.json();
 
