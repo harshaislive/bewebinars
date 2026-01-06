@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom Attendees - Webinar Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { padding-top: 20px; background-color: #f8f9fa; font-family: 'Inter', sans-serif; }
+        .container { max-width: 1200px; }
+        .card { margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: none; }
+        .card-header { background-color: #fff; border-bottom: 1px solid #eee; font-weight: bold; }
+        .table th { font-size: 0.85rem; text-transform: uppercase; color: #6c757d; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fa-solid fa-users-viewfinder text-primary"></i> Zoom Attendees</h2>
+        <div>
+            <a href="/dashboard.html" class="btn btn-outline-secondary btn-sm">Dashboard</a>
+            <a href="/history.html" class="btn btn-outline-secondary btn-sm">History</a>
+        </div>
+    </div>
+
+    <!-- Selection Card -->
+    <div class="card">
+        <div class="card-header">Select a Webinar</div>
+        <div class="card-body">
+            <select id="webinarSelect" class="form-select mb-3">
+                <option value="" selected disabled>Loading past webinars...</option>
+            </select>
+            <button id="loadBtn" class="btn btn-primary" disabled>
+                View Attendees
+            </button>
+        </div>
+    </div>
+
+    <!-- Results Card -->
+    <div class="card" id="resultsCard" style="display:none;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Attendee List (<span id="attendeeCount">0</span>)</span>
+            <div>
+                 <button class="btn btn-sm btn-outline-success" onclick="downloadCSV()">
+                    <i class="fa-solid fa-download"></i> Export CSV
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th class="text-center">Entries (Joins)</th>
+                            <th class="text-center">Total Duration (Mins)</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Rows injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let allSessions = [];
+    let currentSession = null;
+
+    // --- Init ---
+    document.addEventListener('DOMContentLoaded', async () => {
+        const isLoggedIn = await checkAuth();
+        if (isLoggedIn) {
+            fetchWebinars();
+        }
+    });
+
+    async function checkAuth() {
+        try {
+            const res = await fetch('/api/auth-status');
+            const data = await res.json();
+            if (!data.isLoggedIn) {
+                window.location.href = '/login.html';
+                return false;
+            }
+            return true;
+        } catch (e) {
+            window.location.href = '/login.html';
+            return false;
+        }
+    }
+
+    async function fetchWebinars() {
+        try {
+            const res = await fetch('/api/webinars/past');
+            const data = await res.json();
+            
+            const select = document.getElementById('webinarSelect');
+            select.innerHTML = '<option value="" selected disabled>Select a webinar...</option>';
+            
+            allSessions = [];
+            data.collectives.forEach(c => {
+                c.sessions.forEach(s => {
+                    s.collectiveName = c.collective;
+                    allSessions.push(s);
+                });
+            });
+
+            // Sort by date desc
+            allSessions.sort((a, b) => new Date(b.isoDate) - new Date(a.isoDate));
+
+            allSessions.forEach((s, index) => {
+                const opt = document.createElement('option');
+                opt.value = index;
+                const date = new Date(s.isoDate).toLocaleDateString();
+                opt.textContent = `${date} - ${s.collectiveName}: ${s.eventName} (${s.attendanceCount || 0} Attended)`;
+                select.appendChild(opt);
+            });
+
+            select.addEventListener('change', () => {
+                document.getElementById('loadBtn').disabled = false;
+            });
+
+        } catch (err) {
+            alert('Failed to load webinars.');
+            console.error(err);
+        }
+    }
+
+    document.getElementById('loadBtn').addEventListener('click', () => {
+        const index = document.getElementById('webinarSelect').value;
+        if (index === '') return;
+
+        currentSession = allSessions[index];
+        renderTable(currentSession);
+    });
+
+        function renderTable(session) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            // Combine matched and external
+            const matched = session.attendanceList || [];
+            const external = session.externalAttendanceList || [];
+            
+            // Tag them for display
+            const all = [
+                ...matched.map(a => ({ ...a, type: 'Matched' })), 
+                ...external.map(a => ({ ...a, type: 'Guest' }))
+            ];
+            
+            if (all.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-4">No Zoom attendance data available for this session.</td></tr>';
+                document.getElementById('attendeeCount').innerText = '0';
+                document.getElementById('resultsCard').style.display = 'block';
+                return;
+            }
+    
+            all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    
+            all.forEach(p => {
+                const tr = document.createElement('tr');
+                const badgeClass = p.type === 'Matched' ? 'bg-success' : 'bg-warning text-dark';
+                
+                tr.innerHTML = `
+                    <td>${p.name || 'Guest'}</td>
+                    <td>${p.email || '-'}</td>
+                    <td class="text-center"><span class="badge bg-secondary rounded-pill">${p.entryCount || 1}</span></td>
+                    <td class="text-center">${p.totalDuration || p.duration || 0}</td>
+                    <td><span class="badge ${badgeClass}">${p.type}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+    
+            document.getElementById('attendeeCount').innerText = all.length;
+            document.getElementById('resultsCard').style.display = 'block';
+        }
+    
+        function downloadCSV() {
+            if (!currentSession) return;
+            
+            const matched = currentSession.attendanceList || [];
+            const external = currentSession.externalAttendanceList || [];
+            const all = [...matched.map(a => ({...a, status:'Matched'})), ...external.map(a => ({...a, status:'Guest'}))];
+            
+            let csv = 'Name,Email,Entries,Total Duration (Mins),Status\n';
+            
+            all.forEach(r => {
+                csv += `"${r.name || ''}","${r.email || ''}",${r.entryCount || 1},${r.totalDuration || r.duration || 0},"${r.status}"\n`;
+            });
+    
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `zoom-attendees-${currentSession.isoDate.split('T')[0]}.csv`;
+            a.click();
+        }</script>
+</body>
+</html>

@@ -339,30 +339,40 @@ function normalizeName(value) {
 function filterAndDedupAttendance(attendees) {
     if (!Array.isArray(attendees) || attendees.length === 0) return [];
 
-    const deduped = new Map();
-    
+    const groups = new Map();
+
+    // 1. Group by unique key (Email or Name)
     attendees.forEach(entry => {
-        // Key by Email if available, else Name
         const key = entry.email 
             ? entry.email.toLowerCase().trim()
             : `name:${(entry.name || 'guest').toLowerCase()}`;
-            
-        // Ignore empty emails if we want strict matching, 
-        // but often Zoom users don't have emails if not logged in.
-        // We keep them but they might not match Registrants.
         
-        const existing = deduped.get(key);
-        if (!existing) {
-            deduped.set(key, entry);
-        } else {
-            // Keep the one with longer duration
-            if (entry.duration > existing.duration) {
-                deduped.set(key, entry);
-            }
+        if (!groups.has(key)) {
+            groups.set(key, []);
         }
+        groups.get(key).push(entry);
     });
 
-    return Array.from(deduped.values());
+    // 2. Aggregate stats per group
+    const results = [];
+    groups.forEach((groupEvents) => {
+        // Pick the best representative (longest duration) to use for name/details
+        const sorted = groupEvents.sort((a, b) => b.duration - a.duration);
+        const best = sorted[0];
+
+        // Calculate stats
+        const entryCount = groupEvents.length;
+        const totalDuration = groupEvents.reduce((sum, e) => sum + (e.duration || 0), 0);
+
+        // Create result object
+        const result = { ...best };
+        result.entryCount = entryCount;
+        result.totalDuration = totalDuration; 
+        
+        results.push(result);
+    });
+
+    return results;
 }
 
 // --- MIDDLEWARE ---
@@ -509,6 +519,7 @@ async function processEvents(events, options = {}) {
                         const { matched, external } = matchAttendanceToRegistrants(dedupedAttendance, s.attendees);
                         baseSession.zoomMeetingId = meetingId;
                         baseSession.attendanceList = matched;
+                        baseSession.externalAttendanceList = external; // Expose external attendees
                         baseSession.attendanceCount = matched.length;
                         baseSession.totalAttendance = dedupedAttendance.length;
                         baseSession.externalAttendance = external.length;
