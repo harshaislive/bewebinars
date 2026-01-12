@@ -388,32 +388,63 @@ function matchAttendanceToRegistrants(attendanceList, registrants) {
     if (!Array.isArray(attendanceList) || attendanceList.length === 0) {
         return { matched: [], external: [] };
     }
-    const registrantEmails = new Set();
-    const registrantNames = new Set();
+    
+    // Use Maps to store full registrant object
+    const registrantEmailMap = new Map();
+    const registrantNameMap = new Map();
+
     (registrants || []).forEach(r => {
         const emailKey = normalizeEmail(r.email);
-        if (emailKey) registrantEmails.add(emailKey);
+        if (emailKey) registrantEmailMap.set(emailKey, r);
+        
         const nameKey = normalizeName(r.name);
-        if (nameKey) registrantNames.add(nameKey);
+        if (nameKey) registrantNameMap.set(nameKey, r);
     });
+
     const matched = [];
     const external = [];
 
     attendanceList.forEach(entry => {
+        let matchedRegistrant = null;
+        let matchSource = null;
+
+        // 1. Try matching by Email
         const email = normalizeEmail(entry.email);
-        if (email && registrantEmails.has(email)) {
-            matched.push(entry);
-            registrantEmails.delete(email);
-            return;
+        if (email && registrantEmailMap.has(email)) {
+            matchedRegistrant = registrantEmailMap.get(email);
+            matchSource = 'email';
+        } 
+        // 2. Try matching by Name
+        else {
+            const nameKey = normalizeName(entry.name);
+            if (nameKey && registrantNameMap.has(nameKey)) {
+                matchedRegistrant = registrantNameMap.get(nameKey);
+                matchSource = 'name';
+            }
         }
-        const nameKey = normalizeName(entry.name);
-        if (nameKey && registrantNames.has(nameKey)) {
-            matched.push(entry);
-            registrantNames.delete(nameKey);
-            return;
+
+        if (matchedRegistrant) {
+            // Remove from maps to avoid double matching
+            const rEmailKey = normalizeEmail(matchedRegistrant.email);
+            if (rEmailKey) registrantEmailMap.delete(rEmailKey);
+            
+            const rNameKey = normalizeName(matchedRegistrant.name);
+            if (rNameKey) registrantNameMap.delete(rNameKey);
+
+            // Merge: Prefer Zoom attendance data, but fill missing info (email, phone) from Registrant
+            matched.push({
+                ...entry,
+                // Use Registrant email if Zoom email is missing or we matched by name/email
+                email: matchedRegistrant.email || entry.email, 
+                registrantName: matchedRegistrant.name, // Keep original registrant name
+                phone: matchedRegistrant.phone,
+                matchSource
+            });
+        } else {
+            external.push(entry);
         }
-        external.push(entry);
     });
+
     return { matched, external };
 }
 
