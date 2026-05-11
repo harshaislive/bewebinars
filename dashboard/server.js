@@ -485,8 +485,8 @@ async function processEvents(events, options = {}) {
     }));
 
     // Step D: Process Data
-    const webinars = { 'Mumbai': [], 'Bhopal': [], 'Hammiyala': [], 'Poomaale': [] };
-    const targetNames = ['Mumbai', 'Bhopal', 'Hammiyala', 'Poomaale'];
+    const targetNames = ['Mumbai', 'Bhopal', 'Hammiyala', 'Poomaale', 'Hyderabad'];
+    const webinars = Object.fromEntries(targetNames.map(name => [name, []]));
 
     detailedEvents.forEach(event => {
         const name = event.name;

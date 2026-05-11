@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This project is a dashboard application designed to manage and visualize webinar schedules and statistics. It specifically integrates with **Calendly** to fetch upcoming and past webinar events, track attendee counts, and categorize sessions by specific "collectives" (Mumbai, Bhopal, Hammiyala, Poomaale).
+This project is a dashboard application designed to manage and visualize webinar schedules and statistics. It specifically integrates with **Calendly** to fetch upcoming and past webinar events, track attendee counts, and categorize sessions by specific "collectives" (Mumbai, Bhopal, Hammiyala, Poomaale, Hyderabad).
 
 The application provides a web interface to:
 - Authenticate with Calendly via OAuth.
